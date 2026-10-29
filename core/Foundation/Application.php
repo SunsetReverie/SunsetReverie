@@ -27,6 +27,8 @@ use SunsetReverie\Http\Pipeline;
 use SunsetReverie\Http\Request;
 use SunsetReverie\Http\Response;
 use SunsetReverie\Routing\Router;
+use SunsetReverie\Validation\ValidationServiceProvider;
+use SunsetReverie\Validation\Validator;
 
 /**
  * 应用引导与请求分发。
@@ -40,7 +42,7 @@ use SunsetReverie\Routing\Router;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.3.0';
+    public const VERSION = '0.4.0';
 
     private static ?self $instance = null;
 
@@ -172,6 +174,16 @@ final class Application
     }
 
     /**
+     * 获取校验器。
+     *
+     * @return Validator 校验器实例
+     */
+    public function validator(): Validator
+    {
+        return $this->container->get(Validator::class);
+    }
+
+    /**
      * 获取 Provider 注册表（诊断用）。
      *
      * @return ProviderRepository Provider 注册表
@@ -272,6 +284,7 @@ final class Application
         $args = array_slice($argv, 2);
 
         return match ($command) {
+            'new' => $this->commandNew($args),
             'serve' => $this->commandServe($args),
             'route:list' => $this->commandRouteList($args),
             'route:cache' => $this->commandRouteCache(),
@@ -321,6 +334,7 @@ final class Application
     private function bootstrap(): void
     {
         $this->loadEnvironment();
+        $this->registerAppNamespace();
         $this->loadConfiguration();
         $this->loadRoutes();
 
@@ -346,7 +360,11 @@ final class Application
         $providers = $this->config->get('app.providers');
 
         if (!is_array($providers)) {
-            $providers = [DatabaseServiceProvider::class, CacheServiceProvider::class];
+            $providers = [
+                DatabaseServiceProvider::class,
+                CacheServiceProvider::class,
+                ValidationServiceProvider::class,
+            ];
         }
 
         $this->providers->register($providers);
@@ -420,6 +438,56 @@ final class Application
         }
 
         $this->registerDefaultRoutes();
+        $this->registerFileRoutes();
+    }
+
+    /**
+     * 注册业务路由文件（routes/api.php 返回一个接收 Router 的闭包）。
+     *
+     * @return void
+     */
+    private function registerFileRoutes(): void
+    {
+        $file = $this->basePath('routes/api.php');
+
+        if (!is_file($file)) {
+            return;
+        }
+
+        $registrar = require $file;
+
+        if (is_callable($registrar)) {
+            $registrar($this->router);
+        }
+    }
+
+    /**
+     * 注册 App\ 命名空间到项目根 app/ 目录。
+     *
+     * 框架位于项目子目录时（如 sunsetreverie/），框架自身无法推断项目位置，
+     * 因此由 Application 在引导时注册，而不是写死在 autoload.php 里。
+     *
+     * @return void
+     */
+    private function registerAppNamespace(): void
+    {
+        $appPath = $this->basePath('app');
+
+        if (!is_dir($appPath)) {
+            return;
+        }
+
+        spl_autoload_register(static function (string $class) use ($appPath): void {
+            if (!str_starts_with($class, 'App\\')) {
+                return;
+            }
+
+            $file = $appPath . '/' . str_replace('\\', '/', substr($class, 4)) . '.php';
+
+            if (is_file($file)) {
+                require $file;
+            }
+        });
     }
 
     /**
@@ -465,25 +533,157 @@ final class Application
      */
     private function invoke(mixed $handler, array $params, Request $request): mixed
     {
+        [$target, $reflection] = $this->resolveHandler($handler);
+        $arguments = $this->resolveArguments($reflection->getParameters(), $params, $request);
+
+        return $target(...$arguments);
+    }
+
+    /**
+     * 把处理器解析成可调用对象与反射信息。
+     *
+     * @param mixed $handler 处理器（Closure / [class, method] / 'class@method'）
+     * @return array{0: callable, 1: \ReflectionFunctionAbstract} 目标与反射
+     * @throws HttpException 处理器不可调用时抛出
+     */
+    private function resolveHandler(mixed $handler): array
+    {
         if ($handler instanceof Closure) {
-            return $handler($request, ...array_values($params));
+            return [$handler, new \ReflectionFunction($handler)];
         }
 
         if (is_array($handler) && count($handler) === 2) {
             [$class, $method] = $handler;
             $instance = is_object($class) ? $class : $this->container->get((string) $class);
 
-            return $instance->{$method}($request, ...array_values($params));
+            return $this->reflectMethod($instance, (string) $method);
         }
 
         if (is_string($handler) && str_contains($handler, '@')) {
             [$class, $method] = explode('@', $handler, 2);
-            $instance = $this->container->get($class);
 
-            return $instance->{$method}($request, ...array_values($params));
+            return $this->reflectMethod($this->container->get($class), $method);
         }
 
         throw new HttpException(500, ErrorCode::InternalError->value, '路由处理器不可调用');
+    }
+
+    /**
+     * 反射控制器方法并校验可调用性。
+     *
+     * @param object $instance 控制器实例
+     * @param string $method 方法名
+     * @return array{0: callable, 1: \ReflectionMethod} 目标与反射
+     * @throws HttpException 方法不存在或不可调用时抛出
+     */
+    private function reflectMethod(object $instance, string $method): array
+    {
+        if (!method_exists($instance, $method)) {
+            throw new HttpException(500, ErrorCode::InternalError->value, sprintf(
+                '控制器方法 [%s::%s] 不存在',
+                $instance::class,
+                $method
+            ));
+        }
+
+        $reflection = new \ReflectionMethod($instance, $method);
+
+        if (!$reflection->isPublic()) {
+            throw new HttpException(500, ErrorCode::InternalError->value, sprintf(
+                '控制器方法 [%s::%s] 必须是 public',
+                $instance::class,
+                $method
+            ));
+        }
+
+        return [[$instance, $method], $reflection];
+    }
+
+    /**
+     * 按类型与名称解析处理器参数。
+     *
+     * 解析优先级：
+     * 1. 类类型：Request 注入当前请求，其余从容器解析（支持任意服务）；
+     * 2. 与路由参数同名的标量：取路由参数并做类型转换；
+     * 3. 参数默认值；
+     * 4. 可空参数注入 null；
+     * 5. 否则报错（不猜测）。
+     *
+     * @param list<\ReflectionParameter> $parameters 参数列表
+     * @param array<string, string> $params 路由参数
+     * @param Request $request 当前请求
+     * @return list<mixed> 实参数组
+     * @throws HttpException 无法解析时抛出
+     */
+    private function resolveArguments(array $parameters, array $params, Request $request): array
+    {
+        $arguments = [];
+
+        foreach ($parameters as $parameter) {
+            $type = $parameter->getType();
+
+            if ($type instanceof \ReflectionNamedType && !$type->isBuiltin()) {
+                $class = $type->getName();
+
+                if ($class === Request::class || $request instanceof $class) {
+                    $arguments[] = $request;
+
+                    continue;
+                }
+
+                $arguments[] = $this->container->get($class);
+
+                continue;
+            }
+
+            $name = $parameter->getName();
+
+            if (array_key_exists($name, $params)) {
+                $arguments[] = $this->coerceScalar($params[$name], $type);
+
+                continue;
+            }
+
+            if ($parameter->isDefaultValueAvailable()) {
+                $arguments[] = $parameter->getDefaultValue();
+
+                continue;
+            }
+
+            if ($parameter->allowsNull()) {
+                $arguments[] = null;
+
+                continue;
+            }
+
+            throw new HttpException(500, ErrorCode::InternalError->value, sprintf(
+                '无法解析控制器参数 [$%s]：标量参数需与路由参数同名或提供默认值',
+                $name
+            ));
+        }
+
+        return $arguments;
+    }
+
+    /**
+     * 路由参数类型转换（路由匹配结果永远是字符串）。
+     *
+     * @param string $value 原始值
+     * @param \ReflectionType|null $type 目标类型
+     * @return mixed 转换后的值
+     */
+    private function coerceScalar(string $value, ?\ReflectionType $type): mixed
+    {
+        if (!$type instanceof \ReflectionNamedType) {
+            return $value;
+        }
+
+        return match ($type->getName()) {
+            'int' => (int) $value,
+            'float' => (float) $value,
+            'bool' => filter_var($value, FILTER_VALIDATE_BOOL),
+            default => $value,
+        };
     }
 
     /**
@@ -520,6 +720,265 @@ final class Application
     }
 
     // ── CLI 命令 ──────────────────────────────────────────────────────
+
+    /**
+     * new 命令：从 skeleton 生成项目骨架。
+     *
+     * @param list<string> $args 参数（[目录] [--force]）
+     * @return int 退出码
+     */
+    private function commandNew(array $args): int
+    {
+        if ($this->hasOption($args, 'domains')) {
+            $this->error('多域骨架尚未实现（计划 v0.5），当前请使用单域骨架');
+
+            return 1;
+        }
+
+        $skeleton = $this->basePath('skeleton');
+
+        if (!is_dir($skeleton)) {
+            $this->error('未找到骨架模板：' . $skeleton);
+
+            return 1;
+        }
+
+        $targetArgument = $this->firstArgument($args) ?? '.';
+        $current = getcwd() ?: $this->basePath();
+        $target = $targetArgument === '.'
+            ? $current
+            : (str_starts_with($targetArgument, '/') ? $targetArgument : $current . '/' . $targetArgument);
+        $target = rtrim($target, '/');
+        $name = basename($target) ?: 'app';
+        $force = in_array('--force', $args, true);
+
+        if (!is_dir($target) && !@mkdir($target, 0755, true) && !is_dir($target)) {
+            $this->error('无法创建目录：' . $target);
+
+            return 1;
+        }
+
+        if (!$force && $this->hasBlockingFiles($target)) {
+            $this->error('目标目录非空，如需继续请加 --force（已存在的业务文件不会被删除）');
+
+            return 1;
+        }
+
+        $frameworkRelative = $this->relativePath($target, $this->basePath());
+        $copied = $this->copySkeleton($skeleton, $target, $name, $frameworkRelative);
+        $this->writeEnvFile($target);
+        $this->writeBinShim($target, $frameworkRelative);
+
+        $this->line('项目已生成：' . $target);
+        $this->line(sprintf('  骨架文件 %d 个（已跳过 .git / vendor / 框架目录）', $copied));
+        $this->line('');
+        $this->line('后续步骤：');
+        $this->line('  1) cd ' . $target);
+        $this->line('  2) php bin/sr serve');
+        $this->line('  3) 访问 http://127.0.0.1:8000/');
+
+        return 0;
+    }
+
+    /**
+     * 递归复制骨架并替换占位符。
+     *
+     * @param string $source 骨架目录
+     * @param string $target 目标目录
+     * @param string $name 项目名
+     * @param string $frameworkRelative 框架相对路径
+     * @return int 复制文件数
+     */
+    private function copySkeleton(string $source, string $target, string $name, string $frameworkRelative): int
+    {
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($source, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        $count = 0;
+
+        foreach ($iterator as $item) {
+            /** @var \SplFileInfo $item */
+            $relative = substr($item->getPathname(), strlen($source) + 1);
+
+            if (str_starts_with($relative, '.git/') || str_starts_with($relative, 'vendor/')) {
+                continue;
+            }
+
+            $destination = $target . '/' . $relative;
+
+            if ($item->isDir()) {
+                if (!is_dir($destination)) {
+                    @mkdir($destination, 0755, true);
+                }
+
+                continue;
+            }
+
+            if (!is_dir(dirname($destination))) {
+                @mkdir(dirname($destination), 0755, true);
+            }
+
+            if (is_file($destination) && !in_array($relative, ['.gitignore', '.env.example'], true)) {
+                continue;
+            }
+
+            $content = (string) file_get_contents($item->getPathname());
+            $content = str_replace(
+                ['{{APP_NAME}}', '{{FRAMEWORK_PATH}}'],
+                [$name, $frameworkRelative],
+                $content
+            );
+
+            file_put_contents($destination, $content);
+            @chmod($destination, 0644);
+            $count++;
+        }
+
+        return $count;
+    }
+
+    /**
+     * 生成 .env（基于 .env.example，自动填入 APP_KEY）。
+     *
+     * @param string $target 项目目录
+     * @return void
+     */
+    private function writeEnvFile(string $target): void
+    {
+        $example = $target . '/.env.example';
+
+        if (!is_file($example) || is_file($target . '/.env')) {
+            return;
+        }
+
+        $content = (string) file_get_contents($example);
+        $key = 'base64:' . base64_encode(random_bytes(32));
+        $content = (string) preg_replace('/^APP_KEY=.*$/m', 'APP_KEY=' . $key, $content);
+
+        file_put_contents($target . '/.env', $content);
+        @chmod($target . '/.env', 0600);
+    }
+
+    /**
+     * 生成项目 CLI 入口（shim，转发到框架 CLI 并传入项目根）。
+     *
+     * @param string $target 项目目录
+     * @param string $frameworkRelative 框架路径
+     * @return void
+     */
+    private function writeBinShim(string $target, string $frameworkRelative): void
+    {
+        $directory = $target . '/bin';
+
+        if (!is_dir($directory)) {
+            @mkdir($directory, 0755, true);
+        }
+
+        $path = var_export($frameworkRelative, true);
+
+        $shim = "#!/usr/bin/env php\n"
+            . "<?php\n\n"
+            . "declare(strict_types=1);\n\n"
+            . "// 业务项目 CLI 入口：先定位项目根，再交给框架 CLI\n"
+            . "\$projectRoot = dirname(__DIR__);\n"
+            . "\$framework = {$path};\n\n"
+            . "if (!str_starts_with(\$framework, '/') && preg_match('/^[A-Za-z]:/', \$framework) !== 1) {\n"
+            . "    \$framework = \$projectRoot . '/' . ltrim(\$framework, '/');\n"
+            . "}\n\n"
+            . "putenv('SR_BASE_PATH=' . \$projectRoot);\n\n"
+            . "require \$framework . '/bin/sr';\n";
+
+        file_put_contents($target . '/bin/sr', $shim);
+        @chmod($target . '/bin/sr', 0755);
+    }
+
+    /**
+     * 判断目标目录是否存在"阻断性"文件。
+     *
+     * @param string $path 目录
+     * @return bool 存在阻断文件返回 true
+     */
+    private function hasBlockingFiles(string $path): bool
+    {
+        $items = @scandir($path);
+
+        if ($items === false) {
+            return false;
+        }
+
+        $allowed = [
+            '.', '..', '.git', 'vendor', '.DS_Store', '.gitmodules',
+            'sunsetreverie', 'bin', 'app', 'config', 'routes', 'public',
+            'storage', 'tests', '.env', '.env.example', '.gitignore',
+        ];
+
+        foreach ($items as $item) {
+            if (!in_array($item, $allowed, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * 计算路径相对基准目录的表示（不在其下则返回绝对路径）。
+     *
+     * @param string $base 基准目录
+     * @param string $path 目标路径
+     * @return string 相对或绝对路径
+     */
+    private function relativePath(string $base, string $path): string
+    {
+        $base = rtrim($base, '/');
+
+        if ($path === $base) {
+            return '.';
+        }
+
+        if (str_starts_with($path, $base . '/')) {
+            return substr($path, strlen($base) + 1);
+        }
+
+        return $path;
+    }
+
+    /**
+     * 取第一个非选项参数。
+     *
+     * @param list<string> $args 参数
+     * @return string|null 参数值
+     */
+    private function firstArgument(array $args): ?string
+    {
+        foreach ($args as $arg) {
+            if (!str_starts_with($arg, '-')) {
+                return $arg;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * 判断是否传入了某个选项（--name 或 --name=value）。
+     *
+     * @param list<string> $args 参数
+     * @param string $name 选项名
+     * @return bool 存在返回 true
+     */
+    private function hasOption(array $args, string $name): bool
+    {
+        foreach ($args as $arg) {
+            if ($arg === '--' . $name || str_starts_with($arg, '--' . $name . '=')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /**
      * serve 命令：启动 PHP 内置开发服务器。
@@ -576,8 +1035,15 @@ declare(strict_types=1);
 \$path = parse_url(\$_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 
 // 静态资源与上传文件交给内置服务器直接读取
-if (str_starts_with(\$path, '/uploads/') || is_file(\$basePath . '/public' . \$path)) {
+if (str_starts_with(\$path, '/uploads/') || (is_file(\$basePath . '/public' . \$path) && !str_contains(\$path, '..'))) {
     return false;
+}
+
+// 业务项目：交给 public/index.php；框架自身：直接自举
+if (is_file(\$basePath . '/public/index.php')) {
+    require \$basePath . '/public/index.php';
+
+    return;
 }
 
 require \$basePath . '/core/Foundation/autoload.php';
@@ -762,6 +1228,7 @@ PHP;
         $this->line('用法：sr <command> [options]');
         $this->line('');
         $this->line('可用命令：');
+        $this->line('  new           生成项目骨架（[目录] [--force]）');
         $this->line('  serve         启动本地开发服务器（--host= --port=）');
         $this->line('  route:list    列出已注册路由（--json）');
         $this->line('  route:cache   导出路由缓存');

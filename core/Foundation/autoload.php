@@ -128,4 +128,7 @@ if (is_dir($sunsetBasePath . '/app')) {
 
 $sunsetLoader->register();
 
+// ── 全局辅助函数（独立文件，无命名空间）─────────────────────────────
+require __DIR__ . '/../Support/helpers.php';
+
 return $sunsetLoader;

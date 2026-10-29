@@ -4,29 +4,37 @@ declare(strict_types=1);
 
 namespace SunsetReverie\Foundation;
 
-use JsonException;
+use Closure;
 use Throwable;
+use SunsetReverie\Config\Config;
+use SunsetReverie\Config\Env;
+use SunsetReverie\Config\EnvLoader;
 use SunsetReverie\Container\Container;
 use SunsetReverie\Exception\ErrorCode;
+use SunsetReverie\Exception\ErrorHandler;
 use SunsetReverie\Exception\HttpException;
+use SunsetReverie\Http\Controller\HealthController;
+use SunsetReverie\Http\Envelope;
+use SunsetReverie\Http\Middleware\SecurityHeaders;
+use SunsetReverie\Http\Middleware\TraceRequest;
+use SunsetReverie\Http\Pipeline;
 use SunsetReverie\Http\Request;
 use SunsetReverie\Http\Response;
-use SunsetReverie\Routing\Exception\MethodNotAllowedException;
 use SunsetReverie\Routing\Router;
 
 /**
- * 应用引导与请求分发（v0.1 最小内核）。
+ * 应用引导与请求分发。
  *
- * 职责：
- * 1. 注册自动加载器（由 autoload.php 完成）；
- * 2. 构建容器并绑定基础服务；
- * 3. 分发 HTTP 请求与 CLI 命令；
- * 4. 统一响应包络与异常兜底。
+ * v0.2 在 v0.1 基础上增加：
+ * - 配置加载（.env + config/*.php + 环境覆盖 + 缓存）；
+ * - 全局与路由级中间件管道；
+ * - 统一异常渲染（debug / 生产两套策略）；
+ * - route:cache / config:cache 等运维命令。
  */
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.1.0';
+    public const VERSION = '0.2.0';
 
     private static ?self $instance = null;
 
@@ -34,8 +42,17 @@ final class Application
 
     private Router $router;
 
-    /** @var Request|null 当前请求（用于包络中的 request_id） */
+    private Pipeline $pipeline;
+
+    private Config $config;
+
+    private ErrorHandler $errorHandler;
+
+    /** @var Request|null 当前请求（包络中的 request_id 来源） */
     private ?Request $currentRequest = null;
+
+    /** @var list<class-string|Closure> 全局中间件 */
+    private array $globalMiddleware = [];
 
     /**
      * @param string $basePath 项目根目录
@@ -44,6 +61,9 @@ final class Application
     {
         $this->container = new Container();
         $this->router = new Router();
+        $this->pipeline = new Pipeline($this->container);
+        $this->config = new Config();
+        $this->errorHandler = new ErrorHandler();
     }
 
     /**
@@ -59,8 +79,7 @@ final class Application
         }
 
         $app = new self(rtrim($basePath, '/'));
-        $app->registerBaseBindings();
-        $app->registerDefaultRoutes();
+        $app->bootstrap();
         self::$instance = $app;
 
         return $app;
@@ -112,6 +131,16 @@ final class Application
     }
 
     /**
+     * 获取配置仓库。
+     *
+     * @return Config 配置实例
+     */
+    public function config(): Config
+    {
+        return $this->config;
+    }
+
+    /**
      * 拼接项目内绝对路径。
      *
      * @param string $path 相对路径
@@ -120,6 +149,31 @@ final class Application
     public function basePath(string $path = ''): string
     {
         return $this->basePath . ($path === '' ? '' : '/' . ltrim($path, '/'));
+    }
+
+    /**
+     * 追加全局中间件。
+     *
+     * @param class-string|Closure|list<class-string|Closure> $middleware 中间件
+     * @return self 应用实例
+     */
+    public function middleware(string|Closure|array $middleware): self
+    {
+        foreach ((array) $middleware as $item) {
+            $this->globalMiddleware[] = $item;
+        }
+
+        return $this;
+    }
+
+    /**
+     * 获取全局中间件列表。
+     *
+     * @return list<class-string|Closure> 中间件
+     */
+    public function globalMiddleware(): array
+    {
+        return $this->globalMiddleware;
     }
 
     /**
@@ -133,30 +187,36 @@ final class Application
         $request ??= Request::capture();
         $this->currentRequest = $request;
 
+        $matched = null;
+        $dispatchError = null;
+
         try {
             $matched = $this->router->dispatch($request->method, $request->path);
-            $result = $this->invoke($matched['route']->handler, $matched['params'], $request);
-            $response = $this->normalize($result);
-        } catch (MethodNotAllowedException $e) {
-            $response = $this->fail(
-                $e->errorCode ?? ErrorCode::MethodNotAllowed->value,
-                $e->getMessage(),
-                $e->status,
-            )->withHeader('Allow', implode(', ', $e->allowed));
-        } catch (HttpException $e) {
-            $response = $this->fail(
-                $e->errorCode ?? $e->status,
-                $e->getMessage(),
-                $e->status,
-                $e->errors,
-            );
         } catch (Throwable $e) {
-            $response = $this->renderThrowable($e);
+            $dispatchError = $e;
         }
 
-        return $response
-            ->withHeader('X-Request-Id', $request->requestId)
-            ->withHeader('X-Content-Type-Options', 'nosniff');
+        $middleware = [
+            ...$this->globalMiddleware,
+            ...($matched === null ? [] : $matched['route']->middlewareList()),
+        ];
+
+        return $this->pipeline
+            ->send($request)
+            ->through($middleware)
+            ->then(function (Request $request) use ($matched, $dispatchError): Response {
+                if ($dispatchError !== null) {
+                    return $this->errorHandler->render($dispatchError, $request);
+                }
+
+                try {
+                    $result = $this->invoke($matched['route']->handler, $matched['params'], $request);
+
+                    return $this->normalize($result);
+                } catch (Throwable $e) {
+                    return $this->errorHandler->render($e, $request);
+                }
+            });
     }
 
     /**
@@ -173,6 +233,10 @@ final class Application
         return match ($command) {
             'serve' => $this->commandServe($args),
             'route:list' => $this->commandRouteList($args),
+            'route:cache' => $this->commandRouteCache(),
+            'route:clear' => $this->commandRouteClear(),
+            'config:cache' => $this->commandConfigCache(),
+            'config:clear' => $this->commandConfigClear(),
             'about' => $this->commandAbout(),
             'help', '--help', '-h' => $this->commandHelp(),
             '--version', '-V' => $this->commandVersion(),
@@ -189,9 +253,7 @@ final class Application
      */
     public function success(mixed $data = null, string $message = 'ok'): Response
     {
-        $payload = $this->envelope(ErrorCode::Ok->value, $message, $data);
-
-        return Response::json($payload, 200);
+        return Response::json(Envelope::success($data, $message, $this->currentRequestId()));
     }
 
     /**
@@ -205,41 +267,130 @@ final class Application
      */
     public function fail(int $code, string $message, int $status = 400, ?array $errors = null): Response
     {
-        $payload = $this->envelope($code, $message, null);
-
-        if ($errors !== null) {
-            $payload['errors'] = $errors;
-        }
+        $payload = Envelope::error($code, $message, $this->currentRequestId(), $errors);
 
         return Response::json($payload, $status);
     }
 
     /**
-     * 绑定基础服务到容器。
+     * 引导流程：环境 → 配置 → 绑定 → 中间件 → 路由。
      *
      * @return void
      */
-    private function registerBaseBindings(): void
+    private function bootstrap(): void
     {
+        $this->loadEnvironment();
+        $this->loadConfiguration();
+        $this->loadRoutes();
+
         $this->container->instance(self::class, $this);
         $this->container->instance(Container::class, $this->container);
         $this->container->instance(Router::class, $this->router);
+        $this->container->instance(Config::class, $this->config);
+
+        $this->errorHandler = new ErrorHandler($this->isDebug());
+        $this->globalMiddleware = $this->resolveGlobalMiddleware();
     }
 
     /**
-     * 注册内置路由（健康检查）。
+     * 加载 .env（存在才加载；真实环境变量优先）。
+     *
+     * @return void
+     */
+    private function loadEnvironment(): void
+    {
+        $file = $this->basePath('.env');
+
+        if (is_file($file)) {
+            EnvLoader::load($file);
+        }
+    }
+
+    /**
+     * 加载配置：优先读取缓存，其次读取 config 目录。
+     *
+     * @return void
+     */
+    private function loadConfiguration(): void
+    {
+        $cacheFile = $this->basePath('storage/compiled/config.php');
+
+        if ($this->shouldPreferCache() && is_file($cacheFile)) {
+            $this->config = Config::fromCache($cacheFile);
+
+            return;
+        }
+
+        $this->config = Config::fromDirectory(
+            $this->basePath('config'),
+            Env::string('APP_ENV', 'local'),
+        );
+    }
+
+    /**
+     * 解析全局中间件（配置优先，否则使用框架默认）。
+     *
+     * @return list<class-string|Closure> 中间件列表
+     */
+    private function resolveGlobalMiddleware(): array
+    {
+        $configured = $this->config->get('app.middleware');
+
+        if (is_array($configured)) {
+            return array_values($configured);
+        }
+
+        return [TraceRequest::class, SecurityHeaders::class];
+    }
+
+    /**
+     * 加载路由：生产环境优先使用缓存，其余情况现场注册。
+     *
+     * @return void
+     */
+    private function loadRoutes(): void
+    {
+        $cacheFile = $this->compiledPath('routes.php');
+
+        if ($this->shouldPreferCache() && is_file($cacheFile)) {
+            $this->router = Router::fromCacheFile($cacheFile);
+
+            return;
+        }
+
+        $this->registerDefaultRoutes();
+    }
+
+    /**
+     * 是否优先使用编译缓存（仅生产环境）。
+     *
+     * 开发环境忽略缓存，避免「改了路由/配置却不生效」的困惑。
+     *
+     * @return bool 使用缓存返回 true
+     */
+    private function shouldPreferCache(): bool
+    {
+        return Env::string('APP_ENV', 'local') === 'production';
+    }
+
+    /**
+     * 是否处于调试模式。
+     *
+     * @return bool 调试返回 true
+     */
+    private function isDebug(): bool
+    {
+        return Env::bool('APP_DEBUG', false);
+    }
+
+    /**
+     * 注册内置路由。
      *
      * @return void
      */
     private function registerDefaultRoutes(): void
     {
-        $this->router->get('/health', function (Request $request): array {
-            return [
-                'status' => 'healthy',
-                'version' => self::VERSION,
-                'time' => date(DATE_ATOM),
-            ];
-        }, 'framework.health');
+        $this->router->get('/health', [HealthController::class, 'index'], 'framework.health');
     }
 
     /**
@@ -253,7 +404,7 @@ final class Application
      */
     private function invoke(mixed $handler, array $params, Request $request): mixed
     {
-        if ($handler instanceof \Closure) {
+        if ($handler instanceof Closure) {
             return $handler($request, ...array_values($params));
         }
 
@@ -279,7 +430,6 @@ final class Application
      *
      * @param mixed $result 返回值
      * @return Response 响应实例
-     * @throws JsonException 编码失败时抛出
      */
     private function normalize(mixed $result): Response
     {
@@ -299,57 +449,7 @@ final class Application
     }
 
     /**
-     * 渲染未捕获异常（生产脱敏 / 调试暴露细节）。
-     *
-     * @param Throwable $e 异常
-     * @return Response 响应实例
-     */
-    private function renderThrowable(Throwable $e): Response
-    {
-        $debug = (bool) ($_ENV['APP_DEBUG'] ?? false);
-
-        $response = $this->fail(
-            ErrorCode::InternalError->value,
-            $debug ? $e->getMessage() : '服务器内部错误',
-            500,
-        );
-
-        if ($debug) {
-            $response = $response->withHeader('X-Debug-Exception', rawurlencode($e::class));
-        }
-
-        error_log(sprintf(
-            '[SunsetReverie] %s: %s in %s:%d',
-            $e::class,
-            $e->getMessage(),
-            $e->getFile(),
-            $e->getLine()
-        ));
-
-        return $response;
-    }
-
-    /**
-     * 构造统一响应包络。
-     *
-     * @param int $code 业务码
-     * @param string $message 消息
-     * @param mixed $data 数据
-     * @return array<string, mixed> 包络数组
-     */
-    private function envelope(int $code, string $message, mixed $data): array
-    {
-        return [
-            'code' => $code,
-            'message' => $message,
-            'data' => $data,
-            'request_id' => $this->currentRequestId(),
-            'timestamp' => time(),
-        ];
-    }
-
-    /**
-     * 获取当前请求 ID（CLI 场景生成临时值）。
+     * 获取当前请求 ID（无请求时生成临时值）。
      *
      * @return string 请求 ID
      */
@@ -396,7 +496,7 @@ final class Application
      */
     private function writeServeRouter(): string
     {
-        $directory = $this->basePath('storage/compiled');
+        $directory = $this->compiledPath();
 
         if (!is_dir($directory)) {
             mkdir($directory, 0755, true);
@@ -447,6 +547,7 @@ PHP;
                 'methods' => implode('|', $route->methods),
                 'uri' => $route->uri,
                 'name' => $route->name,
+                'middleware' => $route->middlewareList(),
             ], $routes);
 
             $this->line((string) json_encode(['total' => count($rows), 'routes' => $rows], JSON_UNESCAPED_UNICODE));
@@ -458,12 +559,111 @@ PHP;
 
         foreach ($routes as $route) {
             $this->line(sprintf(
-                '%-12s %-24s %s',
+                '%-10s %-24s %-24s %s',
                 implode('|', $route->methods),
                 $route->uri,
-                $route->name ?? '-'
+                $route->name ?? '-',
+                $route->middlewareList() === [] ? '-' : implode(',', $route->middlewareList())
             ));
         }
+
+        return 0;
+    }
+
+    /**
+     * route:cache 命令：导出路由表。
+     *
+     * @return int 退出码
+     */
+    private function commandRouteCache(): int
+    {
+        try {
+            $code = $this->router->export();
+        } catch (Throwable $e) {
+            $this->error('路由缓存失败：' . $e->getMessage());
+
+            return 1;
+        }
+
+        $file = $this->compiledPath('routes.php');
+
+        if (!is_dir(dirname($file))) {
+            mkdir(dirname($file), 0755, true);
+        }
+
+        file_put_contents($file, $code);
+        $this->line('路由已缓存：' . $file . '（' . count($this->router->routes()) . ' 条）');
+        $this->line('提示：路由缓存仅在 APP_ENV=production 时加载');
+
+        return 0;
+    }
+
+    /**
+     * route:clear 命令：清除路由缓存。
+     *
+     * @return int 退出码
+     */
+    private function commandRouteClear(): int
+    {
+        $file = $this->compiledPath('routes.php');
+
+        if (is_file($file)) {
+            unlink($file);
+            $this->line('路由缓存已清除');
+
+            return 0;
+        }
+
+        $this->line('没有路由缓存');
+
+        return 0;
+    }
+
+    /**
+     * config:cache 命令：导出配置。
+     *
+     * @return int 退出码
+     */
+    private function commandConfigCache(): int
+    {
+        try {
+            $code = $this->config->export();
+        } catch (Throwable $e) {
+            $this->error('配置缓存失败：' . $e->getMessage());
+
+            return 1;
+        }
+
+        $file = $this->compiledPath('config.php');
+
+        if (!is_dir(dirname($file))) {
+            mkdir(dirname($file), 0755, true);
+        }
+
+        file_put_contents($file, $code);
+        $this->line('配置已缓存：' . $file);
+        $this->line('提示：配置缓存仅在 APP_ENV=production 时加载');
+
+        return 0;
+    }
+
+    /**
+     * config:clear 命令：清除配置缓存。
+     *
+     * @return int 退出码
+     */
+    private function commandConfigClear(): int
+    {
+        $file = $this->compiledPath('config.php');
+
+        if (is_file($file)) {
+            unlink($file);
+            $this->line('配置缓存已清除');
+
+            return 0;
+        }
+
+        $this->line('没有配置缓存');
 
         return 0;
     }
@@ -478,8 +678,10 @@ PHP;
         $this->line('SunsetReverie Framework');
         $this->line('  版本      : ' . self::VERSION);
         $this->line('  PHP       : ' . PHP_VERSION);
+        $this->line('  环境      : ' . Env::string('APP_ENV', 'local') . (Env::bool('APP_DEBUG') ? '（debug）' : ''));
         $this->line('  根目录    : ' . $this->basePath);
-        $this->line('  已解析服务: ' . count($this->container->resolved()));
+        $this->line('  配置项    : ' . count($this->config->all()) . ' 组');
+        $this->line('  全局中间件: ' . count($this->globalMiddleware));
         $this->line('  路由数量  : ' . count($this->router->routes()));
         $this->line('  加载文件  : ' . count(get_included_files()));
         $this->line('  峰值内存  : ' . round(memory_get_peak_usage(true) / 1024 / 1024, 2) . ' MB');
@@ -499,10 +701,14 @@ PHP;
         $this->line('用法：sr <command> [options]');
         $this->line('');
         $this->line('可用命令：');
-        $this->line('  serve       启动本地开发服务器（--host= --port=）');
-        $this->line('  route:list  列出已注册路由（--json）');
-        $this->line('  about       显示环境与框架信息');
-        $this->line('  help        显示本帮助');
+        $this->line('  serve         启动本地开发服务器（--host= --port=）');
+        $this->line('  route:list    列出已注册路由（--json）');
+        $this->line('  route:cache   导出路由缓存');
+        $this->line('  route:clear   清除路由缓存');
+        $this->line('  config:cache  导出配置缓存');
+        $this->line('  config:clear  清除配置缓存');
+        $this->line('  about         显示环境与框架信息');
+        $this->line('  help          显示本帮助');
 
         return 0;
     }
@@ -530,6 +736,19 @@ PHP;
         $this->error(sprintf('未知命令：%s（执行 sr help 查看可用命令）', $command));
 
         return 2;
+    }
+
+    /**
+     * 编译缓存目录。
+     *
+     * @param string $file 可选文件名
+     * @return string 绝对路径
+     */
+    private function compiledPath(string $file = ''): string
+    {
+        $directory = $this->basePath('storage/compiled');
+
+        return $file === '' ? $directory : $directory . '/' . $file;
     }
 
     /**

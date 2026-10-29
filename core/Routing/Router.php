@@ -12,11 +12,12 @@ use SunsetReverie\Routing\Exception\RouteNotFoundException;
 /**
  * 路由注册与匹配。
  *
- * v0.1 能力：
- * - 静态路径 O(1) 匹配；
- * - {name} 占位符（不含正则约束，v0.2 补 whereNumber 等）；
- * - 404 / 405 区分，405 回写 Allow 头；
- * - 重复注册在注册期抛异常。
+ * v0.2 能力：
+ * - 静态路径 O(1)、{name} 占位符 + 参数约束；
+ * - 路由组（prefix / as / middleware）；
+ * - 路由级中间件；
+ * - 404 / 405 区分，405 回写 Allow；
+ * - 导出为可缓存数组（禁止闭包）。
  */
 final class Router
 {
@@ -31,6 +32,12 @@ final class Router
 
     /** @var array<string, Route> 具名路由 */
     private array $named = [];
+
+    /** @var list<Route> 全部路由（去重后，按注册顺序） */
+    private array $all = [];
+
+    /** @var list<array<string, mixed>> 分组属性栈 */
+    private array $groupStack = [];
 
     /**
      * 注册 GET 路由。
@@ -111,6 +118,24 @@ final class Router
     }
 
     /**
+     * 路由组。
+     *
+     * @param array{prefix?: string, as?: string, middleware?: string|list<string>} $attributes 分组属性
+     * @param Closure(Router): void $callback 组内注册回调
+     * @return void
+     */
+    public function group(array $attributes, Closure $callback): void
+    {
+        $this->groupStack[] = $attributes;
+
+        try {
+            $callback($this);
+        } finally {
+            array_pop($this->groupStack);
+        }
+    }
+
+    /**
      * 通用注册。
      *
      * @param list<string> $methods 允许的方法
@@ -122,30 +147,33 @@ final class Router
      */
     public function add(array $methods, string $uri, mixed $handler, ?string $name = null): Route
     {
-        $uri = '/' . trim($uri, '/');
-        $uri = $uri === '/' ? '/' : rtrim($uri, '/');
+        $fullUri = $this->joinUri($uri);
         $methods = array_map('strtoupper', $methods);
-        $route = new Route($methods, $uri, $handler, $name);
+
+        $fullName = $this->joinName($name);
+        $route = new Route($methods, $fullUri, $handler, $fullName, $this->groupMiddleware());
 
         foreach ($methods as $method) {
-            if (isset($this->static[$method . ' ' . $uri])) {
-                throw new DuplicateRouteException($method, $uri);
+            if (isset($this->static[$method . ' ' . $fullUri])) {
+                throw new DuplicateRouteException($method, $fullUri);
             }
 
-            $this->byPath[$uri][$method] = $route;
+            $this->byPath[$fullUri][$method] = $route;
         }
 
         if ($route->isStatic()) {
             foreach ($methods as $method) {
-                $this->static[$method . ' ' . $uri] = $route;
+                $this->static[$method . ' ' . $fullUri] = $route;
             }
         } else {
             $this->dynamic[] = $route;
         }
 
-        if ($name !== null) {
-            $this->named[$name] = $route;
+        if ($fullName !== null) {
+            $this->named[$fullName] = $route;
         }
+
+        $this->all[] = $route;
 
         return $route;
     }
@@ -161,17 +189,14 @@ final class Router
      */
     public function dispatch(string $method, string $path): array
     {
-        $path = '/' . trim($path, '/');
-        $path = $path === '/' ? '/' : rtrim($path, '/');
+        $path = $this->normalizePath($path);
 
-        // 1) 静态路由 O(1)
         $static = $this->static[$method . ' ' . $path] ?? $this->static['ANY ' . $path] ?? null;
 
         if ($static !== null) {
             return ['route' => $static, 'params' => []];
         }
 
-        // 2) 动态路由按注册顺序
         foreach ($this->dynamic as $route) {
             if (!$route->supports($method)) {
                 continue;
@@ -184,7 +209,6 @@ final class Router
             }
         }
 
-        // 3) 路径存在但方法不允许 → 405
         $allowed = $this->allowedMethods($path);
 
         if ($allowed !== []) {
@@ -202,6 +226,8 @@ final class Router
      */
     public function allowedMethods(string $path): array
     {
+        $path = $this->normalizePath($path);
+
         if (isset($this->byPath[$path])) {
             return array_values(array_diff(array_keys($this->byPath[$path]), ['ANY']));
         }
@@ -232,23 +258,153 @@ final class Router
     }
 
     /**
-     * 获取全部已注册路由（route:list 使用）。
+     * 获取全部已注册路由（去重，按注册顺序）。
      *
      * @return list<Route> 路由列表
      */
     public function routes(): array
     {
-        return [...array_values($this->static), ...$this->dynamic];
+        return $this->all;
     }
 
     /**
-     * 批量注册（闭包内可直接使用 Router 方法）。
+     * 导出为可缓存的 PHP 代码。
      *
-     * @param Closure $callback 注册回调
+     * @return string PHP 代码
+     * @throws \RuntimeException 存在闭包处理器时抛出
+     */
+    public function export(): string
+    {
+        $definitions = array_map(
+            static fn (Route $route): array => $route->toArray(),
+            $this->all
+        );
+
+        return "<?php\n\ndeclare(strict_types=1);\n\n// 由 sr route:cache 生成，请勿手动修改\nreturn "
+            . var_export($definitions, true) . ";\n";
+    }
+
+    /**
+     * 从缓存文件还原路由表。
+     *
+     * @param string $file 缓存文件
+     * @return self 新路由器
+     * @throws \RuntimeException 文件损坏时抛出
+     */
+    public static function fromCacheFile(string $file): self
+    {
+        $definitions = require $file;
+
+        if (!is_array($definitions)) {
+            throw new \RuntimeException(sprintf('路由缓存损坏：[%s] 未返回数组', $file));
+        }
+
+        $router = new self();
+
+        foreach ($definitions as $definition) {
+            $route = Route::fromArray($definition);
+            $router->restore($route);
+        }
+
+        return $router;
+    }
+
+    /**
+     * 直接还原一条已构造的路由（缓存加载专用）。
+     *
+     * @param Route $route 路由
      * @return void
      */
-    public function group(Closure $callback): void
+    private function restore(Route $route): void
     {
-        $callback($this);
+        if ($route->isStatic()) {
+            foreach ($route->methods as $method) {
+                $this->static[$method . ' ' . $route->uri] = $route;
+            }
+        } else {
+            $this->dynamic[] = $route;
+        }
+
+        foreach ($route->methods as $method) {
+            $this->byPath[$route->uri][$method] = $route;
+        }
+
+        if ($route->name !== null) {
+            $this->named[$route->name] = $route;
+        }
+
+        $this->all[] = $route;
+    }
+
+    /**
+     * 合并分组前缀与当前 URI。
+     *
+     * @param string $uri 原始 URI
+     * @return string 完整 URI
+     */
+    private function joinUri(string $uri): string
+    {
+        $prefix = '';
+
+        foreach ($this->groupStack as $attributes) {
+            $segment = trim((string) ($attributes['prefix'] ?? ''), '/');
+
+            if ($segment !== '') {
+                $prefix .= '/' . $segment;
+            }
+        }
+
+        return $this->normalizePath($prefix . '/' . ltrim($uri, '/'));
+    }
+
+    /**
+     * 合并分组名称前缀。
+     *
+     * @param string|null $name 路由名
+     * @return string|null 完整名称
+     */
+    private function joinName(?string $name): ?string
+    {
+        $prefix = '';
+
+        foreach ($this->groupStack as $attributes) {
+            $prefix .= (string) ($attributes['as'] ?? '');
+        }
+
+        if ($name === null) {
+            return $prefix === '' ? null : rtrim($prefix, '.');
+        }
+
+        return $prefix . $name;
+    }
+
+    /**
+     * 合并分组中间件。
+     *
+     * @return list<string> 中间件列表
+     */
+    private function groupMiddleware(): array
+    {
+        $middleware = [];
+
+        foreach ($this->groupStack as $attributes) {
+            $middleware = [...$middleware, ...(array) ($attributes['middleware'] ?? [])];
+        }
+
+        return $middleware;
+    }
+
+    /**
+     * 路径归一化：确保以 / 开头、无重复斜杠、无尾斜杠。
+     *
+     * @param string $path 原始路径
+     * @return string 归一化路径
+     */
+    private function normalizePath(string $path): string
+    {
+        $path = '/' . trim($path, '/');
+        $path = (string) preg_replace('#/+#', '/', $path);
+
+        return $path === '/' ? '/' : rtrim($path, '/');
     }
 }

@@ -19,6 +19,9 @@ final class Request
     /** @var array<string, string> 规范化后的请求头（小写键） */
     private array $headers = [];
 
+    /** @var array<string, mixed> 请求属性（中间件写入：认证用户、域信息等） */
+    private array $attributes = [];
+
     /**
      * @param string $method HTTP 方法（大写）
      * @param string $path 请求路径（不含查询串）
@@ -187,6 +190,33 @@ final class Request
         }
 
         return $decoded;
+    }
+
+    /**
+     * 读取请求属性（中间件写入的派生数据）。
+     *
+     * @param string $key 属性名
+     * @param mixed $default 默认值
+     * @return mixed 属性值
+     */
+    public function attribute(string $key, mixed $default = null): mixed
+    {
+        return $this->attributes[$key] ?? $default;
+    }
+
+    /**
+     * 写入请求属性（返回新实例，保持不可变语义）。
+     *
+     * @param string $key 属性名
+     * @param mixed $value 值
+     * @return self 新请求实例
+     */
+    public function withAttribute(string $key, mixed $value): self
+    {
+        $clone = clone $this;
+        $clone->attributes[$key] = $value;
+
+        return $clone;
     }
 
     /**

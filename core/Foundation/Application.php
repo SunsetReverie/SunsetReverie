@@ -10,6 +10,8 @@ use SunsetReverie\Config\Config;
 use SunsetReverie\Console\ConsoleKernel;
 use SunsetReverie\Config\Env;
 use SunsetReverie\Config\EnvLoader;
+use SunsetReverie\Auth\AuthManager;
+use SunsetReverie\Auth\AuthServiceProvider;
 use SunsetReverie\Cache\CacheManager;
 use SunsetReverie\Cache\CacheServiceProvider;
 use SunsetReverie\Cache\CacheStoreInterface;
@@ -43,7 +45,7 @@ use SunsetReverie\Validation\Validator;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.5.0';
+    public const VERSION = '0.6.0';
 
     private static ?self $instance = null;
 
@@ -175,6 +177,16 @@ final class Application
     }
 
     /**
+     * 获取认证管理器。
+     *
+     * @return AuthManager 认证管理器
+     */
+    public function auth(): AuthManager
+    {
+        return $this->container->get(AuthManager::class);
+    }
+
+    /**
      * 获取校验器。
      *
      * @return Validator 校验器实例
@@ -268,22 +280,31 @@ final class Application
             ...($matched === null ? [] : $matched['route']->middlewareList()),
         ];
 
-        return $this->pipeline
-            ->send($request)
-            ->through($middleware)
-            ->then(function (Request $request) use ($matched, $dispatchError): Response {
-                if ($dispatchError !== null) {
-                    return $this->errorHandler->render($dispatchError, $request);
-                }
+        try {
+            return $this->pipeline
+                ->send($request)
+                ->through($middleware)
+                ->then(function (Request $request) use ($matched, $dispatchError): Response {
+                    if ($dispatchError !== null) {
+                        return $this->errorHandler->render($dispatchError, $request);
+                    }
 
-                try {
-                    $result = $this->invoke($matched['route']->handler, $matched['params'], $request);
+                    try {
+                        $result = $this->invoke($matched['route']->handler, $matched['params'], $request);
 
-                    return $this->normalize($result);
-                } catch (Throwable $e) {
-                    return $this->errorHandler->render($e, $request);
-                }
-            });
+                        return $this->normalize($result);
+                    } catch (Throwable $e) {
+                        return $this->errorHandler->render($e, $request);
+                    }
+                });
+        } catch (Throwable $e) {
+            // 中间件自身抛出的异常（如认证失败）：此时外层中间件的后置逻辑不会执行，
+            // 因此这里补上基础的追踪与安全头，保证错误响应与正常响应同样安全。
+            return $this->errorHandler->render($e, $request)
+                ->withHeader('X-Request-Id', $request->requestId)
+                ->withHeader('X-Content-Type-Options', 'nosniff')
+                ->withHeader('X-Frame-Options', 'DENY');
+        }
     }
 
     /**
@@ -367,6 +388,7 @@ final class Application
             DatabaseServiceProvider::class,
             CacheServiceProvider::class,
             ValidationServiceProvider::class,
+            AuthServiceProvider::class,
         ];
 
         $configured = $this->config->get('app.providers');

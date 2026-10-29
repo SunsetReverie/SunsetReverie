@@ -18,6 +18,10 @@ enum ErrorCode: int
     case BootstrapFailed = 10004;
     case Maintenance = 10005;
 
+    case Unauthenticated = 20001;
+    case TokenExpired = 20002;
+    case Forbidden = 20003;
+
     case ValidationFailed = 30001;
     case InvalidJson = 30002;
     case MissingParameter = 30003;
@@ -39,6 +43,9 @@ enum ErrorCode: int
             self::ConfigError => 500,
             self::BootstrapFailed => 500,
             self::Maintenance => 503,
+            self::Unauthenticated => 401,
+            self::TokenExpired => 401,
+            self::Forbidden => 403,
             self::ValidationFailed => 422,
             self::InvalidJson => 400,
             self::MissingParameter => 400,
@@ -61,6 +68,9 @@ enum ErrorCode: int
             self::ConfigError => '配置错误',
             self::BootstrapFailed => '框架启动失败',
             self::Maintenance => '系统维护中',
+            self::Unauthenticated => '请先登录',
+            self::TokenExpired => '登录已过期，请重新登录',
+            self::Forbidden => '无权限执行此操作',
             self::ValidationFailed => '参数校验失败',
             self::InvalidJson => '请求体不是合法 JSON',
             self::MissingParameter => '缺少必要参数',
@@ -83,6 +93,9 @@ enum ErrorCode: int
             self::ConfigError => 'SR.CONFIG.ERROR',
             self::BootstrapFailed => 'SR.BOOTSTRAP.FAILED',
             self::Maintenance => 'SR.SERVER.MAINTENANCE',
+            self::Unauthenticated => 'SR.AUTH.UNAUTHENTICATED',
+            self::TokenExpired => 'SR.AUTH.TOKEN_EXPIRED',
+            self::Forbidden => 'SR.AUTH.FORBIDDEN',
             self::ValidationFailed => 'SR.VALIDATION.FAILED',
             self::InvalidJson => 'SR.HTTP.INVALID_JSON',
             self::MissingParameter => 'SR.HTTP.MISSING_PARAMETER',

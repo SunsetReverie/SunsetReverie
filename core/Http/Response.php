@@ -91,6 +91,23 @@ final class Response
     }
 
     /**
+     * 批量追加响应头（返回新实例）。
+     *
+     * @param array<string, string> $headers 头列表
+     * @return self 新响应实例
+     */
+    public function withHeaders(array $headers): self
+    {
+        $clone = clone $this;
+
+        foreach ($headers as $name => $value) {
+            $clone->headers[$name] = $value;
+        }
+
+        return $clone;
+    }
+
+    /**
      * 获取状态码。
      *
      * @return int HTTP 状态码

@@ -24,11 +24,13 @@ use SunsetReverie\Exception\ErrorHandler;
 use SunsetReverie\Exception\HttpException;
 use SunsetReverie\Http\Controller\HealthController;
 use SunsetReverie\Http\Envelope;
+use SunsetReverie\Http\Middleware\HandleCors;
 use SunsetReverie\Http\Middleware\SecurityHeaders;
 use SunsetReverie\Http\Middleware\TraceRequest;
 use SunsetReverie\Http\Pipeline;
 use SunsetReverie\Http\Request;
 use SunsetReverie\Http\Response;
+use SunsetReverie\RateLimit\RateLimitServiceProvider;
 use SunsetReverie\Routing\Router;
 use SunsetReverie\Validation\ValidationServiceProvider;
 use SunsetReverie\Validation\Validator;
@@ -45,7 +47,7 @@ use SunsetReverie\Validation\Validator;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.6.0';
+    public const VERSION = '0.7.0';
 
     private static ?self $instance = null;
 
@@ -275,6 +277,12 @@ final class Application
             $dispatchError = $e;
         }
 
+        if ($matched !== null) {
+            $request = $request
+                ->withAttribute('route.name', $matched['route']->name)
+                ->withAttribute('route.uri', $matched['route']->uri);
+        }
+
         $middleware = [
             ...$this->globalMiddleware,
             ...($matched === null ? [] : $matched['route']->middlewareList()),
@@ -389,6 +397,7 @@ final class Application
             CacheServiceProvider::class,
             ValidationServiceProvider::class,
             AuthServiceProvider::class,
+            RateLimitServiceProvider::class,
         ];
 
         $configured = $this->config->get('app.providers');
@@ -449,7 +458,9 @@ final class Application
             return array_values($configured);
         }
 
-        return [TraceRequest::class, SecurityHeaders::class];
+        // 顺序很重要：安全头在最外（保证错误响应也带头），追踪其次，CORS 最后
+        // 这样预检 204 也能拿到 X-Request-Id 与安全头
+        return [SecurityHeaders::class, TraceRequest::class, HandleCors::class];
     }
 
     /**

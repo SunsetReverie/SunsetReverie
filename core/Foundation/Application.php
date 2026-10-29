@@ -9,6 +9,12 @@ use Throwable;
 use SunsetReverie\Config\Config;
 use SunsetReverie\Config\Env;
 use SunsetReverie\Config\EnvLoader;
+use SunsetReverie\Cache\CacheManager;
+use SunsetReverie\Cache\CacheServiceProvider;
+use SunsetReverie\Cache\CacheStoreInterface;
+use SunsetReverie\Database\Connection;
+use SunsetReverie\Database\ConnectionManager;
+use SunsetReverie\Database\DatabaseServiceProvider;
 use SunsetReverie\Container\Container;
 use SunsetReverie\Exception\ErrorCode;
 use SunsetReverie\Exception\ErrorHandler;
@@ -34,7 +40,7 @@ use SunsetReverie\Routing\Router;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.2.0';
+    public const VERSION = '0.3.0';
 
     private static ?self $instance = null;
 
@@ -54,6 +60,8 @@ final class Application
     /** @var list<class-string|Closure> 全局中间件 */
     private array $globalMiddleware = [];
 
+    private ProviderRepository $providers;
+
     /**
      * @param string $basePath 项目根目录
      */
@@ -64,6 +72,7 @@ final class Application
         $this->pipeline = new Pipeline($this->container);
         $this->config = new Config();
         $this->errorHandler = new ErrorHandler();
+        $this->providers = new ProviderRepository($this->container);
     }
 
     /**
@@ -138,6 +147,38 @@ final class Application
     public function config(): Config
     {
         return $this->config;
+    }
+
+    /**
+     * 获取数据库连接（懒建立）。
+     *
+     * @param string|null $name 连接名，null 表示默认连接
+     * @return Connection 连接实例
+     */
+    public function db(?string $name = null): Connection
+    {
+        return $this->container->get(ConnectionManager::class)->connection($name);
+    }
+
+    /**
+     * 获取缓存驱动。
+     *
+     * @param string|null $name 驱动名，null 表示默认驱动
+     * @return CacheStoreInterface 缓存驱动
+     */
+    public function cache(?string $name = null): CacheStoreInterface
+    {
+        return $this->container->get(CacheManager::class)->store($name);
+    }
+
+    /**
+     * 获取 Provider 注册表（诊断用）。
+     *
+     * @return ProviderRepository Provider 注册表
+     */
+    public function providers(): ProviderRepository
+    {
+        return $this->providers;
     }
 
     /**
@@ -290,6 +331,26 @@ final class Application
 
         $this->errorHandler = new ErrorHandler($this->isDebug());
         $this->globalMiddleware = $this->resolveGlobalMiddleware();
+        $this->registerProviders();
+    }
+
+    /**
+     * 注册并启动服务提供者。
+     *
+     * 默认只启用数据库组件；其余组件在 config/app.php 的 providers 中显式追加。
+     *
+     * @return void
+     */
+    private function registerProviders(): void
+    {
+        $providers = $this->config->get('app.providers');
+
+        if (!is_array($providers)) {
+            $providers = [DatabaseServiceProvider::class, CacheServiceProvider::class];
+        }
+
+        $this->providers->register($providers);
+        $this->providers->boot();
     }
 
     /**

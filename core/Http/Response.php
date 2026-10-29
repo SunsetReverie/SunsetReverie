@@ -1,0 +1,145 @@
+<?php
+
+declare(strict_types=1);
+
+namespace SunsetReverie\Http;
+
+use JsonException;
+
+/**
+ * HTTP 响应对象。
+ *
+ * 设计要点：
+ * - 默认 JSON 编码带 JSON_UNESCAPED_UNICODE，中文不转义；
+ * - 编码失败必须抛异常（禁止静默输出空响应）；
+ * - HEAD 请求由 Application 统一去除响应体，本类不感知请求方法。
+ */
+final class Response
+{
+    /** @var array<string, string> 响应头 */
+    private array $headers = [];
+
+    /**
+     * @param string $body 响应体
+     * @param int $status HTTP 状态码
+     * @param array<string, string> $headers 响应头
+     */
+    public function __construct(
+        private string $body = '',
+        private int $status = 200,
+        array $headers = [],
+    ) {
+        foreach ($headers as $name => $value) {
+            $this->headers[$name] = $value;
+        }
+    }
+
+    /**
+     * 构造 JSON 响应。
+     *
+     * @param mixed $data 待编码数据
+     * @param int $status HTTP 状态码
+     * @param array<string, string> $headers 额外响应头
+     * @return self 响应实例
+     * @throws JsonException 编码失败时抛出
+     */
+    public static function json(mixed $data, int $status = 200, array $headers = []): self
+    {
+        $body = json_encode(
+            $data,
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+        );
+
+        return new self($body, $status, ['Content-Type' => 'application/json; charset=utf-8'] + $headers);
+    }
+
+    /**
+     * 构造纯文本响应。
+     *
+     * @param string $text 文本内容
+     * @param int $status HTTP 状态码
+     * @return self 响应实例
+     */
+    public static function text(string $text, int $status = 200): self
+    {
+        return new self($text, $status, ['Content-Type' => 'text/plain; charset=utf-8']);
+    }
+
+    /**
+     * 构造空响应（204 无响应体）。
+     *
+     * @return self 响应实例
+     */
+    public static function noContent(): self
+    {
+        return new self('', 204);
+    }
+
+    /**
+     * 追加响应头（返回新实例，保持不可变语义）。
+     *
+     * @param string $name 头名称
+     * @param string $value 头值
+     * @return self 新响应实例
+     */
+    public function withHeader(string $name, string $value): self
+    {
+        $clone = clone $this;
+        $clone->headers[$name] = $value;
+
+        return $clone;
+    }
+
+    /**
+     * 获取状态码。
+     *
+     * @return int HTTP 状态码
+     */
+    public function status(): int
+    {
+        return $this->status;
+    }
+
+    /**
+     * 获取响应体。
+     *
+     * @return string 响应体
+     */
+    public function body(): string
+    {
+        return $this->body;
+    }
+
+    /**
+     * 获取全部响应头。
+     *
+     * @return array<string, string> 头列表
+     */
+    public function headers(): array
+    {
+        return $this->headers;
+    }
+
+    /**
+     * 发送响应到客户端。
+     *
+     * @param bool $sendBody 是否输出响应体（HEAD 请求传 false）
+     * @return void
+     */
+    public function send(bool $sendBody = true): void
+    {
+        if (!headers_sent()) {
+            // 不向客户端暴露 PHP 版本（安全默认值）
+            header_remove('X-Powered-By');
+            http_response_code($this->status);
+
+            foreach ($this->headers as $name => $value) {
+                header($name . ': ' . $value, true);
+            }
+        }
+
+        if ($sendBody && $this->status !== 204) {
+            echo $this->body;
+        }
+    }
+}

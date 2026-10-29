@@ -1,0 +1,27 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * 夕梦框架命令行入口。
+ *
+ * 用法：
+ *   php bin/sr <command> [options]
+ *   ./bin/sr <command> [options]     （需 chmod +x）
+ *
+ * 与 Web 入口共享同一套引导逻辑，只是最后一步调用 runConsole()。
+ */
+
+$basePath = dirname(__DIR__);
+
+// 1) 可选：加载 Composer 自动加载器（负责 App\ 与第三方库）
+if (is_file($basePath . '/vendor/autoload.php')) {
+    require $basePath . '/vendor/autoload.php';
+}
+
+// 2) 框架自举（框架加载器负责 SunsetReverie\）
+require $basePath . '/core/Foundation/autoload.php';
+
+// 3) 交给 ConsoleKernel 并返回退出码
+exit(\SunsetReverie\Foundation\Application::boot($basePath)->runConsole($argv));

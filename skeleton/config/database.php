@@ -33,8 +33,9 @@ return [
 
         'sqlite' => [
             'driver' => 'sqlite',
+            // 独立变量：避免与 MySQL 的 DB_DATABASE 冲突（后者是库名，这里是文件路径）
             // 相对路径基于项目根解析
-            'database' => env('DB_DATABASE', 'storage/database.sqlite'),
+            'database' => env('DB_SQLITE_DATABASE', 'storage/database.sqlite'),
         ],
     ],
 ];

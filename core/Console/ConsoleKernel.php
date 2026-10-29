@@ -41,6 +41,10 @@ final class ConsoleKernel
             'route:clear' => $this->routeClear(),
             'config:cache' => $this->configCache(),
             'config:clear' => $this->configClear(),
+            'migrate' => $this->migrate(),
+            'migrate:rollback' => $this->migrateRollback($args),
+            'migrate:status' => $this->migrateStatus(),
+            'make:migration' => $this->makeMigration($args),
             'about' => $this->about(),
             'help', '--help', '-h' => $this->help(),
             '--version', '-V' => $this->version(),
@@ -442,6 +446,168 @@ PHP;
         return 0;
     }
 
+    // ── migrate ───────────────────────────────────────────────────────
+
+    /**
+     * migrate 命令：执行全部未运行的迁移。
+     *
+     * @return int 退出码
+     */
+    private function migrate(): int
+    {
+        try {
+            $files = $this->migrator()->migrate();
+        } catch (\Throwable $e) {
+            $this->error('迁移失败：' . $e->getMessage());
+
+            return 1;
+        }
+
+        if ($files === []) {
+            $this->line('没有待执行的迁移');
+
+            return 0;
+        }
+
+        foreach ($files as $file) {
+            $this->line('  ✓ ' . $file);
+        }
+
+        $this->line(sprintf('完成：%d 个迁移', count($files)));
+
+        return 0;
+    }
+
+    /**
+     * migrate:rollback 命令：回滚最近批次。
+     *
+     * @param list<string> $args 参数（--step=N）
+     * @return int 退出码
+     */
+    private function migrateRollback(array $args): int
+    {
+        $steps = max(1, (int) $this->optionValue($args, 'step', '1'));
+
+        try {
+            $files = $this->migrator()->rollback($steps);
+        } catch (\Throwable $e) {
+            $this->error('回滚失败：' . $e->getMessage());
+
+            return 1;
+        }
+
+        if ($files === []) {
+            $this->line('没有可回滚的迁移');
+
+            return 0;
+        }
+
+        foreach ($files as $file) {
+            $this->line('  ↩ ' . $file);
+        }
+
+        $this->line(sprintf('完成：回滚 %d 个迁移', count($files)));
+
+        return 0;
+    }
+
+    /**
+     * migrate:status 命令：查看迁移状态。
+     *
+     * @return int 退出码
+     */
+    private function migrateStatus(): int
+    {
+        try {
+            $status = $this->migrator()->status();
+        } catch (\Throwable $e) {
+            $this->error('读取迁移状态失败：' . $e->getMessage());
+
+            return 1;
+        }
+
+        if ($status['executed'] === [] && $status['pending'] === []) {
+            $this->line('迁移目录为空：' . $this->migrationDirectory());
+
+            return 0;
+        }
+
+        foreach ($status['executed'] as $file => $batch) {
+            $this->line(sprintf('  [已执行 batch %d] %s', $batch, $file));
+        }
+
+        foreach ($status['pending'] as $file) {
+            $this->line(sprintf('  [待执行]        %s', $file));
+        }
+
+        $this->line(sprintf(
+            '共 %d 个，已执行 %d，待执行 %d',
+            count($status['executed']) + count($status['pending']),
+            count($status['executed']),
+            count($status['pending'])
+        ));
+
+        return 0;
+    }
+
+    /**
+     * make:migration 命令：生成迁移文件。
+     *
+     * @param list<string> $args 参数（迁移名）
+     * @return int 退出码
+     */
+    private function makeMigration(array $args): int
+    {
+        $name = $this->firstArgument($args);
+
+        if ($name === null) {
+            $this->error('用法：sr make:migration create_users_table');
+
+            return 2;
+        }
+
+        try {
+            $file = $this->migrator()->make($name);
+        } catch (\Throwable $e) {
+            $this->error('生成失败：' . $e->getMessage());
+
+            return 1;
+        }
+
+        $this->line('已生成：' . $file);
+
+        return 0;
+    }
+
+    /**
+     * 构造迁移执行器。
+     *
+     * @return \SunsetReverie\Database\Migration\Migrator 执行器
+     */
+    private function migrator(): \SunsetReverie\Database\Migration\Migrator
+    {
+        return new \SunsetReverie\Database\Migration\Migrator(
+            $this->app->db(),
+            $this->migrationDirectory(),
+        );
+    }
+
+    /**
+     * 解析迁移目录（配置优先，默认 database/migrations）。
+     *
+     * @return string 绝对路径
+     */
+    private function migrationDirectory(): string
+    {
+        $configured = (string) ($this->app->config()->get('database.migrations') ?? 'database/migrations');
+
+        if (str_starts_with($configured, '/') || preg_match('/^[A-Za-z]:/', $configured) === 1) {
+            return rtrim($configured, '/');
+        }
+
+        return rtrim($this->app->basePath($configured), '/');
+    }
+
     // ── 信息类 ────────────────────────────────────────────────────────
 
     /**
@@ -484,6 +650,10 @@ PHP;
         $this->line('  route:clear   清除路由缓存');
         $this->line('  config:cache  导出配置缓存');
         $this->line('  config:clear  清除配置缓存');
+        $this->line('  migrate       执行未运行的迁移');
+        $this->line('  migrate:rollback [--step=1]  回滚最近批次');
+        $this->line('  migrate:status 查看迁移状态');
+        $this->line('  make:migration {name}        生成迁移文件');
         $this->line('  about         显示环境与框架信息');
         $this->line('  help          显示本帮助');
 

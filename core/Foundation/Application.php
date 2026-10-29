@@ -43,7 +43,7 @@ use SunsetReverie\Validation\Validator;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.4.0';
+    public const VERSION = '0.5.0';
 
     private static ?self $instance = null;
 
@@ -362,14 +362,17 @@ final class Application
      */
     private function registerProviders(): void
     {
-        $providers = $this->config->get('app.providers');
+        // 默认组件始终注册；config/app.php 的 providers 只做追加
+        $providers = [
+            DatabaseServiceProvider::class,
+            CacheServiceProvider::class,
+            ValidationServiceProvider::class,
+        ];
 
-        if (!is_array($providers)) {
-            $providers = [
-                DatabaseServiceProvider::class,
-                CacheServiceProvider::class,
-                ValidationServiceProvider::class,
-            ];
+        $configured = $this->config->get('app.providers');
+
+        if (is_array($configured)) {
+            $providers = array_values(array_unique([...$providers, ...$configured]));
         }
 
         $this->providers->register($providers);

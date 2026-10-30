@@ -27,8 +27,9 @@ class HttpException extends RuntimeException
         public readonly ?int $errorCode = null,
         ?string $message = null,
         public readonly ?array $errors = null,
+        ?\Throwable $previous = null,
     ) {
-        parent::__construct($message ?? '请求处理失败');
+        parent::__construct($message ?? '请求处理失败', 0, $previous);
     }
 
     /**

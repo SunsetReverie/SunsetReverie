@@ -23,6 +23,7 @@ return [
         ],
 
         'pgsql' => [
+            'timeout' => (int) env('DB_TIMEOUT', 5),
             'driver' => 'pgsql',
             'host' => env('DB_HOST', '127.0.0.1'),
             'port' => (int) env('DB_PORT', 5432),

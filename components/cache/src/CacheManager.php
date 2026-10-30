@@ -7,7 +7,9 @@ namespace SunsetReverie\Cache;
 use Closure;
 use SunsetReverie\Api\DomainContext;
 use SunsetReverie\Cache\Driver\ArrayStore;
+use SunsetReverie\Cache\Driver\ApcuStore;
 use SunsetReverie\Cache\Driver\FileStore;
+use SunsetReverie\Cache\Driver\RedisStore;
 use SunsetReverie\Cache\Exception\CacheException;
 
 /**
@@ -18,7 +20,13 @@ use SunsetReverie\Cache\Exception\CacheException;
  */
 final class CacheManager
 {
-    /** 内置默认驱动（无 config/cache.php 时也能工作） */
+    /**
+     * 内置默认驱动。
+     *
+     * 只放"无外部依赖"的两种：array（进程内）与 file（本地磁盘）。
+     * redis / apcu **必须显式配置**——否则会静默连到 localhost:6379，
+     * 在开发机上看起来一切正常，上线后连错实例才发现。
+     */
     private const DEFAULT_STORES = [
         'array' => ['driver' => 'array'],
         'file' => ['driver' => 'file', 'path' => 'storage/cache'],
@@ -168,8 +176,10 @@ final class CacheManager
         return match ($driver) {
             'array' => new ArrayStore($prefix, $ttl),
             'file' => new FileStore($this->resolvePath((string) ($config['path'] ?? 'storage/cache')), $prefix, $ttl),
+            'redis' => new RedisStore($config, $prefix, $ttl),
+            'apcu' => new ApcuStore($prefix, $ttl),
             default => throw new CacheException(sprintf(
-                '不支持的缓存驱动 [%s]，可用：array / file，或通过 extend() 注册',
+                '不支持的缓存驱动 [%s]，可用：array / file / redis / apcu，或通过 extend() 注册',
                 $driver
             )),
         };

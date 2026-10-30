@@ -22,6 +22,22 @@ return [
             'driver' => 'array',
         ],
 
+        // Redis：多机部署首选；键前缀自动隔离，flush 不会影响同库其他应用
+        'redis' => [
+            'driver' => 'redis',
+            'host' => env('REDIS_HOST', '127.0.0.1'),
+            'port' => (int) env('REDIS_PORT', 6379),
+            'password' => env('REDIS_PASSWORD', ''),
+            'database' => (int) env('REDIS_DB', 0),
+            // 连接超时（秒），避免 Redis 不可达时无界等待
+            'timeout' => (float) env('REDIS_TIMEOUT', 1.5),
+        ],
+
+        // APCu：单机共享内存，零外部依赖；多机部署不适用
+        'apcu' => [
+            'driver' => 'apcu',
+        ],
+
         'file' => [
             'driver' => 'file',
             'path' => 'storage/cache',

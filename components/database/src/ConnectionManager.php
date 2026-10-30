@@ -133,6 +133,19 @@ final class ConnectionManager
         $dsn = $this->buildDsn($driver, $config);
         $options = $this->buildOptions($config);
 
+        // 连接超时：避免网络异常时无界等待（默认 5 秒）
+        $timeout = (int) ($config['timeout'] ?? 5);
+
+        if ($timeout > 0 && !isset($options[PDO::ATTR_TIMEOUT])) {
+            $options[PDO::ATTR_TIMEOUT] = $timeout;
+
+            // MySQL 还有独立的连接超时参数，两者不是一回事：
+            // ATTR_TIMEOUT 是读超时，MYSQL_ATTR_CONNECT_TIMEOUT 是握手超时
+            if ($driver === 'mysql' && defined('PDO::MYSQL_ATTR_CONNECT_TIMEOUT')) {
+                $options[PDO::MYSQL_ATTR_CONNECT_TIMEOUT] = $timeout;
+            }
+        }
+
         try {
             return new PDO(
                 $dsn,

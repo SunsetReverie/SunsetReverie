@@ -15,10 +15,11 @@ final class ConnectionException extends HttpException
 {
     /**
      * @param string $message 异常消息
+     * @param \Throwable|null $previous 原始异常（保留异常链，便于日志定位）
      */
-    public function __construct(string $message)
+    public function __construct(string $message, ?\Throwable $previous = null)
     {
-        parent::__construct(500, ErrorCode::DatabaseError->value, $message);
+        parent::__construct(500, ErrorCode::DatabaseError->value, $message, null, $previous);
     }
 
 }

@@ -28,11 +28,12 @@ final class QueryException extends HttpException
         Throwable $previous,
     ) {
         // 保留原始 PDOException 作为 previous，便于日志里看到真正的 SQL 错误
-        parent::__construct(500, ErrorCode::DatabaseError->value, sprintf(
-            'SQL 执行失败：%s（%s）',
-            $previous->getMessage(),
-            $sql
-        ));
-        $this->previous = $previous;
+        parent::__construct(
+            500,
+            ErrorCode::DatabaseError->value,
+            sprintf('SQL 执行失败：%s（%s）', $previous->getMessage(), $sql),
+            null,
+            $previous
+        );
     }
 }

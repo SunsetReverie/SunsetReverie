@@ -102,13 +102,78 @@ final class CacheDriverTest extends TestCase
     }
 
     /**
-     * APCu：扩展未安装时应明确报错，而不是静默返回 false。
+     * APCu：完整读写契约（需扩展可用且在 CLI 下开启 apc.enable_cli）。
      *
      * @return void
      */
-    public function testApcuFailsLoudlyWhenMissing(): void
+    public function testApcuBasics(): void
     {
-        if (extension_loaded('apcu')) {
+        if (!$this->apcuAvailable()) {
+            return;
+        }
+
+        $store = new ApcuStore($this->prefix, 60);
+
+        $this->assertTrue($store->put('user', ['id' => 7, 'name' => '夕梦', 'extra' => null], 60));
+        $this->assertSame(['id' => 7, 'name' => '夕梦', 'extra' => null], $store->get('user'), '数组含 null 应原样取回');
+        $this->assertTrue($store->has('user'));
+        $this->assertSame('默认值', $store->get('missing', '默认值'));
+
+        $this->assertTrue($store->forget('user'));
+        $this->assertNull($store->get('user'));
+    }
+
+    /**
+     * APCu：自增首次写入应带 TTL。
+     *
+     * @return void
+     */
+    public function testApcuIncrement(): void
+    {
+        if (!$this->apcuAvailable()) {
+            return;
+        }
+
+        $store = new ApcuStore($this->prefix, 60);
+
+        $this->assertSame(1, $store->increment('hits'));
+        $this->assertSame(4, $store->increment('hits', 3));
+        $this->assertSame(4, $store->get('hits'));
+    }
+
+    /**
+     * APCu：flush 只删本前缀，且用 APCUIterator 而非 apcu_clear_cache。
+     *
+     * @return void
+     */
+    public function testApcuFlushOnlyTouchesOwnPrefix(): void
+    {
+        if (!$this->apcuAvailable()) {
+            return;
+        }
+
+        $mine = new ApcuStore($this->prefix . 'mine:', 60);
+        $other = new ApcuStore($this->prefix . 'other:', 60);
+
+        $mine->put('a', 'my-data', 60);
+        $other->put('b', 'their-data', 60);
+
+        $mine->flush();
+
+        $this->assertNull($mine->get('a'), '本前缀的键应被清空');
+        $this->assertSame('their-data', $other->get('b'), '其他前缀的键不应被误删（apcu_clear_cache 会全部清掉）');
+
+        $other->flush();
+    }
+
+    /**
+     * APCu 不可用时应明确报错并指出具体原因（缺扩展 / CLI 未开启）。
+     *
+     * @return void
+     */
+    public function testApcuUnavailableThrowsClearError(): void
+    {
+        if ($this->apcuAvailable()) {
             return;
         }
 
@@ -116,7 +181,10 @@ final class CacheDriverTest extends TestCase
 
         $e = $this->assertThrows(CacheException::class, static fn () => $store->put('k', 'v'));
 
-        $this->assertStringContains('ext-apcu', $e->getMessage(), '错误提示应指出需要什么扩展');
+        $this->assertTrue(
+            str_contains($e->getMessage(), 'ext-apcu') || str_contains($e->getMessage(), 'apc.enable_cli'),
+            '错误提示应说明是缺扩展还是缺配置，实际：' . $e->getMessage()
+        );
     }
 
     /**
@@ -174,5 +242,22 @@ final class CacheDriverTest extends TestCase
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    /**
+     * APCu 在**当前 SAPI** 下是否可用。
+     *
+     * 注意 apc.enable_cli 是 PHP_INI_SYSTEM，无法用 ini_set 打开，
+     * 所以 CLI 跑测试需 `php -d apc.enable_cli=1 tests/run.php`。
+     *
+     * @return bool 可用返回 true
+     */
+    private function apcuAvailable(): bool
+    {
+        if (!extension_loaded('apcu') || !function_exists('apcu_fetch')) {
+            return false;
+        }
+
+        return PHP_SAPI !== 'cli' || (string) ini_get('apc.enable_cli') === '1';
     }
 }

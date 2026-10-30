@@ -11,8 +11,17 @@ use SunsetReverie\Cache\Exception\CacheException;
 /**
  * APCu 缓存驱动（单机进程共享内存）。
  *
- * 适用场景：单机部署、无 Redis 依赖，需要跨请求（FPM 多进程）共享缓存。
+ * 适用场景：单机部署、无 Redis 依赖，需要跨请求（FPM 多 worker）共享缓存。
  * **不适用**：多机部署（APCu 不跨机器）、需要持久化（重启即丢）。
+ *
+ * 两个必须知道的限制（实测确认）：
+ *
+ * 1. **CLI 与 FPM 不共享内存段**。FPM 里写入的值，CLI 进程读不到，反之亦然。
+ *    后果：`sr cache:clear` 清不掉 FPM 的 APCu 缓存，只能靠 TTL 过期或重启 FPM。
+ *    （FPM 内部多个 worker 之间是共享的，这才是 APCu 的价值所在。）
+ *
+ * 2. **CLI 下默认不可用**：`apc.enable_cli` 是 PHP_INI_SYSTEM，默认 0，
+ *    无法用 ini_set 打开，需要用 `php -d apc.enable_cli=1` 启动。
  *
  * 注意 flush() 不用 `apcu_clear_cache()`——那是清空整个 APCu，
  * 会把同机其他应用的缓存一起删掉。这里按前缀遍历删除。

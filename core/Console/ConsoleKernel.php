@@ -736,6 +736,16 @@ PHP;
      */
     private function cacheClear(): int
     {
+        $driver = (string) $this->app->config()->get(
+            'cache.stores.' . ($this->app->config()->get('cache.default', 'file')) . '.driver',
+            'file'
+        );
+
+        if ($driver === 'apcu') {
+            $this->line('提示：APCu 的 CLI 与 FPM 使用不同内存段，');
+            $this->line('      本命令只能清空 CLI 侧的缓存，FPM 已写入的条目需等 TTL 过期或重启 PHP-FPM。');
+        }
+
         try {
             $this->app->cache()->flush();
         } catch (\Throwable $e) {

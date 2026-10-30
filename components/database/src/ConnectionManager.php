@@ -156,7 +156,6 @@ final class ConnectionManager
         } catch (\PDOException $e) {
             throw new ConnectionException(
                 sprintf('数据库连接失败 [%s]：%s', $driver, $e->getMessage()),
-                0,
                 $e
             );
         }

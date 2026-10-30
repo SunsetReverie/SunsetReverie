@@ -161,7 +161,9 @@ final class Blueprint
     public function default(mixed $value): self
     {
         $literal = match (true) {
-            is_bool($value) => $value ? '1' : '0',
+            // TRUE / FALSE 是三种数据库都能接受的写法；
+            // 用 1 / 0 会让 PostgreSQL 的 BOOLEAN 列报类型不匹配
+            is_bool($value) => $value ? 'TRUE' : 'FALSE',
             is_int($value), is_float($value) => (string) $value,
             $value === null => 'NULL',
             default => "'" . str_replace("'", "''", (string) $value) . "'",

@@ -46,7 +46,8 @@ final class Repository
             'CREATE TABLE %s (%s, migration VARCHAR(255) NOT NULL, batch INTEGER NOT NULL, executed_at %s)',
             self::TABLE,
             $id,
-            $this->connection->driver() === 'sqlite' ? 'DATETIME' : 'DATETIME'
+            // PostgreSQL 没有 DATETIME 类型，对应的是 TIMESTAMP
+            $this->connection->driver() === 'pgsql' ? 'TIMESTAMP' : 'DATETIME'
         ));
     }
 

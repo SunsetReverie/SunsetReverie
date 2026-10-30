@@ -41,6 +41,10 @@ final class ConsoleKernel
             'route:clear' => $this->routeClear(),
             'config:cache' => $this->configCache(),
             'config:clear' => $this->configClear(),
+            'key:generate' => $this->keyGenerate($args),
+            'env:check' => $this->envCheck(),
+            'optimize' => $this->optimize(),
+            'optimize:clear' => $this->optimizeClear(),
             'migrate' => $this->migrate(),
             'migrate:rollback' => $this->migrateRollback($args),
             'migrate:status' => $this->migrateStatus(),
@@ -585,6 +589,228 @@ PHP;
         return 0;
     }
 
+    // ── 运维命令 ──────────────────────────────────────────────────────
+
+    /**
+     * key:generate：生成 APP_KEY 并写入 .env。
+     *
+     * @param list<string> $args 参数（--show 只打印不写入）
+     * @return int 退出码
+     */
+    private function keyGenerate(array $args): int
+    {
+        $key = 'base64:' . base64_encode(random_bytes(32));
+
+        if (in_array('--show', $args, true)) {
+            $this->line($key);
+
+            return 0;
+        }
+
+        $envFile = $this->app->basePath('.env');
+
+        if (!is_file($envFile)) {
+            $example = $this->app->basePath('.env.example');
+
+            if (is_file($example)) {
+                copy($example, $envFile);
+                $this->line('已从 .env.example 创建 .env');
+            } else {
+                $this->error('未找到 .env 与 .env.example，请先执行 sr new 或手动创建 .env');
+
+                return 1;
+            }
+        }
+
+        $content = (string) file_get_contents($envFile);
+
+        if (preg_match('/^APP_KEY=.*$/m', $content) === 1) {
+            $content = (string) preg_replace('/^APP_KEY=.*$/m', 'APP_KEY=' . $key, $content);
+        } else {
+            $content = rtrim($content, "\n") . "\nAPP_KEY=" . $key . "\n";
+        }
+
+        if (file_put_contents($envFile, $content) === false) {
+            $this->error('.env 写入失败，请检查文件权限');
+
+            return 1;
+        }
+
+        @chmod($envFile, 0600);
+        $this->line('APP_KEY 已写入 .env');
+        $this->line('提示：生产中更换 APP_KEY 会使已加密数据无法解密，请谨慎操作');
+
+        return 0;
+    }
+
+    /**
+     * env:check：环境自检。
+     *
+     * @return int 退出码（有 error 返回 1）
+     */
+    private function envCheck(): int
+    {
+        $errors = 0;
+        $warnings = 0;
+
+        // 1) PHP 版本
+        $this->line('环境自检');
+        $this->line('');
+        $this->line('[PHP]');
+
+        if (version_compare(PHP_VERSION, '8.3.0', '>=')) {
+            $this->line('  ✓ 版本 ' . PHP_VERSION);
+        } else {
+            $this->line('  ✗ 版本 ' . PHP_VERSION . '，要求 >= 8.3.0');
+            $errors++;
+        }
+
+        // 2) 扩展
+        $this->line('');
+        $this->line('[扩展]');
+
+        $required = ['json' => 'JSON 编解码', 'mbstring' => '多字节字符串', 'fileinfo' => '上传类型检测', 'pdo' => '数据库'];
+        $optional = ['openssl' => '加密/签名', 'gd' => '图片处理', 'zip' => '压缩包处理', 'apcu' => 'APCu 缓存', 'redis' => 'Redis 缓存'];
+
+        foreach ($required as $extension => $purpose) {
+            if (extension_loaded($extension)) {
+                $this->line(sprintf('  ✓ %-10s %s', $extension, $purpose));
+            } else {
+                $this->line(sprintf('  ✗ %-10s %s（必需）', $extension, $purpose));
+                $errors++;
+            }
+        }
+
+        foreach ($optional as $extension => $purpose) {
+            if (extension_loaded($extension)) {
+                $this->line(sprintf('  ✓ %-10s %s', $extension, $purpose));
+            } else {
+                $this->line(sprintf('  - %-10s %s（可选，未安装）', $extension, $purpose));
+                $warnings++;
+            }
+        }
+
+        // 3) 目录
+        $this->line('');
+        $this->line('[目录]');
+
+        foreach (['storage/logs', 'storage/cache', 'storage/compiled', 'storage/uploads'] as $directory) {
+            $path = $this->app->basePath($directory);
+
+            if (!is_dir($path)) {
+                $this->line(sprintf('  - %-20s 不存在（首次写入时自动创建）', $directory));
+                $warnings++;
+
+                continue;
+            }
+
+            if (is_writable($path)) {
+                $this->line(sprintf('  ✓ %-20s 可写', $directory));
+            } else {
+                $this->line(sprintf('  ✗ %-20s 不可写，请执行 chmod -R 0755 storage', $directory));
+                $errors++;
+            }
+        }
+
+        // 4) 环境变量
+        $this->line('');
+        $this->line('[环境变量]');
+
+        $env = Env::string('APP_ENV', '');
+        $allowedEnvs = ['local', 'test', 'staging', 'production'];
+
+        if (in_array($env, $allowedEnvs, true)) {
+            $this->line(sprintf('  ✓ APP_ENV=%s', $env));
+        } else {
+            $this->line(sprintf('  ✗ APP_ENV=%s，可选值：%s', $env, implode(' / ', $allowedEnvs)));
+            $errors++;
+        }
+
+        $debug = Env::bool('APP_DEBUG', false);
+
+        if ($debug && in_array($env, ['staging', 'production'], true)) {
+            $this->line('  ✗ APP_DEBUG=true 在 ' . $env . ' 环境必须为 false（会泄露堆栈与配置）');
+            $errors++;
+        } else {
+            $this->line('  ✓ APP_DEBUG=' . ($debug ? 'true' : 'false'));
+        }
+
+        $key = Env::string('APP_KEY', '');
+
+        if ($key === '') {
+            $this->line('  ✗ APP_KEY 为空，请执行 sr key:generate');
+            $errors++;
+        } elseif (strlen((string) preg_replace('/^base64:/', '', $key)) < 32) {
+            $this->line('  ✗ APP_KEY 长度不足（解码后应 ≥32 字节），请重新生成');
+            $errors++;
+        } else {
+            $this->line('  ✓ APP_KEY 已配置');
+        }
+
+        $jwtSecret = Env::string('JWT_SECRET', '');
+
+        if ($jwtSecret !== '' && strlen($jwtSecret) < 32) {
+            $this->line('  ✗ JWT_SECRET 长度不足 32 字节，Token 可被暴力破解');
+            $errors++;
+        } elseif ($jwtSecret !== '') {
+            $this->line('  ✓ JWT_SECRET 已配置');
+        }
+
+        // 5) 汇总
+        $this->line('');
+        $this->line(sprintf('结果：%d 个错误，%d 个提示', $errors, $warnings));
+
+        if ($errors > 0) {
+            $this->error('环境检查未通过，请先修复上述错误');
+
+            return 1;
+        }
+
+        $this->line('环境检查通过');
+
+        return 0;
+    }
+
+    /**
+     * optimize：一键缓存配置与路由。
+     *
+     * @return int 退出码
+     */
+    private function optimize(): int
+    {
+        $routeCode = $this->routeCache();
+
+        if ($routeCode !== 0) {
+            return $routeCode;
+        }
+
+        $configCode = $this->configCache();
+
+        if ($configCode !== 0) {
+            return $configCode;
+        }
+
+        $this->line('');
+        $this->line('优化完成（缓存仅在 APP_ENV=production 时生效）');
+
+        return 0;
+    }
+
+    /**
+     * optimize:clear：一键清除缓存。
+     *
+     * @return int 退出码
+     */
+    private function optimizeClear(): int
+    {
+        $this->routeClear();
+        $this->configClear();
+        $this->line('');
+        $this->line('已清除全部缓存');
+
+        return 0;
+    }
+
     // ── migrate ───────────────────────────────────────────────────────
 
     /**
@@ -789,6 +1015,10 @@ PHP;
         $this->line('  route:clear   清除路由缓存');
         $this->line('  config:cache  导出配置缓存');
         $this->line('  config:clear  清除配置缓存');
+        $this->line('  key:generate  生成 APP_KEY 并写入 .env（--show 只打印）');
+        $this->line('  env:check     环境自检（PHP/扩展/目录/密钥/调试开关）');
+        $this->line('  optimize      一键缓存（配置 + 路由）');
+        $this->line('  optimize:clear 一键清除缓存');
         $this->line('  migrate       执行未运行的迁移');
         $this->line('  migrate:rollback [--step=1]  回滚最近批次');
         $this->line('  migrate:status 查看迁移状态');

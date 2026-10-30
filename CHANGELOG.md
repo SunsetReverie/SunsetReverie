@@ -8,6 +8,37 @@
 
 - 待办见文档 18.3.0「当前验收状态」的缺口列表
 
+## [0.36.0] - 2026-10-30
+
+### 新增
+
+- `Builder::whereGroup(Closure)` / `orWhereGroup(Closure)`：条件分组（加括号）
+- `Builder::whereNotNull()`：`IS NOT NULL`
+
+### 为什么必须加 whereGroup
+
+SQL 里 `AND` 优先级高于 `OR`。做搜索时这样写：
+
+```php
+->where('status', 1)
+  ->where('title', 'LIKE', '%x%')
+  ->orWhere('content', 'LIKE', '%x%')
+```
+
+实际生成 `status = 1 AND title LIKE '%x%' OR content LIKE '%x%'`，
+等价于 `(status = 1 AND title LIKE '%x%') OR content LIKE '%x%'`。
+
+**后果：草稿（status=0）只要正文匹配就会被搜出来**——实测确认，这是数据泄露。
+
+正确写法：
+
+```php
+->where('status', 1)
+  ->whereGroup(fn ($q) => $q->where('title', 'LIKE', '%x%')->orWhere('content', 'LIKE', '%x%'))
+```
+
+生成 `status = 1 AND (title LIKE '%x%' OR content LIKE '%x%')`。
+
 ## [0.35.1] - 2026-10-30
 
 ### 变更

@@ -324,6 +324,91 @@ final class Builder
     }
 
     /**
+     * `IS NOT NULL` 条件。
+     *
+     * RBAC / 订单这类模块常用："已支付"= paid_at 非空，
+     * 而 without whereNotNull 只能写成原生 SQL。
+     *
+     * @param string $column 列名
+     * @return self 当前构造器
+     */
+    public function whereNotNull(string $column): self
+    {
+        $this->assertIdentifier($column);
+        $this->wheres[] = [
+            'sql' => sprintf('%s IS NOT NULL', $column),
+            'bindings' => [],
+            'boolean' => 'and',
+        ];
+
+        return $this;
+    }
+
+    /**
+     * 条件分组（加括号）。
+     *
+     * 为什么必须有它：SQL 里 AND 的优先级高于 OR。
+     *
+     *   ->where('status', 1)
+     *     ->where('title', 'LIKE', '%x%')
+     *     ->orWhere('content', 'LIKE', '%x%')
+     *
+     * 生成的是 `status = ? AND title LIKE ? OR content LIKE ?`，
+     * 等价于 `(status = ? AND title LIKE ?) OR content LIKE ?` ——
+     * **未发布的内容只要正文匹配就会被查出来**，这在搜索场景是数据泄露。
+     *
+     * 用 whereGroup 包起来才对：
+     *
+     *   ->where('status', 1)
+     *     ->whereGroup(fn ($q) => $q->where('title', 'LIKE', '%x%')->orWhere('content', 'LIKE', '%x%'))
+     *
+     * 生成 `status = ? AND (title LIKE ? OR content LIKE ?)`。
+     *
+     * @param Closure(self): void $callback 分组内的条件
+     * @return self 当前构造器
+     */
+    public function whereGroup(Closure $callback): self
+    {
+        return $this->addGroup($callback, 'and');
+    }
+
+    /**
+     * 或条件分组（加括号，用 OR 连接）。
+     *
+     * @param Closure(self): void $callback 分组内的条件
+     * @return self 当前构造器
+     */
+    public function orWhereGroup(Closure $callback): self
+    {
+        return $this->addGroup($callback, 'or');
+    }
+
+    /**
+     * 构造一个嵌套条件分组。
+     *
+     * @param Closure(self): void $callback 分组内的条件
+     * @param string $boolean and / or
+     * @return self 当前构造器
+     */
+    private function addGroup(Closure $callback, string $boolean): self
+    {
+        $nested = new self($this->connection, $this->table);
+        $callback($nested);
+
+        if ($nested->wheres === []) {
+            return $this;
+        }
+
+        $this->wheres[] = [
+            'sql' => '(' . $nested->toWhereSqlFragment() . ')',
+            'bindings' => $nested->bindings(),
+            'boolean' => $boolean,
+        ];
+
+        return $this;
+    }
+
+    /**
      * 条件成立时才应用额外约束。
      *
      * @param bool $condition 条件
@@ -796,6 +881,21 @@ final class Builder
      */
     private function toWhereSql(): string
     {
+        $fragment = $this->toWhereSqlFragment();
+
+        return $fragment === '' ? '' : ' WHERE ' . $fragment;
+    }
+
+    /**
+     * 条件片段（不含 WHERE 前缀）。
+     *
+     * 单独抽出来是为了让嵌套分组能复用同一套拼装逻辑——
+     * 否则括号里的 OR 连接规则会和外层不一致。
+     *
+     * @return string 条件片段
+     */
+    private function toWhereSqlFragment(): string
+    {
         if ($this->wheres === []) {
             return '';
         }
@@ -806,7 +906,7 @@ final class Builder
             $parts[] = ($index === 0 ? '' : strtoupper($where['boolean']) . ' ') . $where['sql'];
         }
 
-        return ' WHERE ' . implode(' ', $parts);
+        return implode(' ', $parts);
     }
 
     /**

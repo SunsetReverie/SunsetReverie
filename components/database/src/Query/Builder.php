@@ -464,11 +464,34 @@ final class Builder
      */
     public function selectRaw(string ...$expressions): self
     {
+        $this->dropDefaultWildcard();
+
         foreach ($expressions as $expression) {
             $this->columns[] = $expression;
         }
 
         return $this;
+    }
+
+    /**
+     * 首次追加选择列时清掉默认的通配符。
+     *
+     * 默认 `$columns = ['*']`，而 selectRaw() 是追加语义，于是：
+     *
+     *   table('t')->selectRaw('COUNT(*) AS n')->groupBy('x')
+     *   → SELECT *, COUNT(*) AS n FROM t GROUP BY x
+     *
+     * MySQL 在 ONLY_FULL_GROUP_BY 关闭时容忍，**PostgreSQL 直接报**
+     * `column "t.id" must appear in the GROUP BY clause`。
+     * 这个差异只有真跑 PG 才会暴露（跨库契约测试抓到的第一例）。
+     *
+     * @return void
+     */
+    private function dropDefaultWildcard(): void
+    {
+        if ($this->columns === ['*']) {
+            $this->columns = [];
+        }
     }
 
     /**
@@ -500,6 +523,7 @@ final class Builder
             ));
         }
 
+        $this->dropDefaultWildcard();
         $this->columns[] = $expression;
         $this->selectBindings = [...$this->selectBindings, ...array_values($bindings)];
 

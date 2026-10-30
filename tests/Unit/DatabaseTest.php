@@ -100,6 +100,10 @@ final class DatabaseTest extends TestCase
     {
         $first = $this->db->table('users')->orderBy('id', 'desc')->first();
 
+        if ($first === null) {
+            $this->fail('users 表应有数据');
+        }
+
         $this->assertSame('Carol', $first['name']);
         $this->assertSame('Carol', $this->db->table('users')->orderBy('id', 'desc')->value('name'));
         $this->assertSame(3, $this->db->table('users')->count());

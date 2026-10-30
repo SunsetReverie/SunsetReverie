@@ -80,7 +80,10 @@ final class QueueTest extends TestCase
 
         $job = $this->driver->pop('default');
 
-        $this->assertTrue($job !== null);
+        if ($job === null) {
+            $this->fail('队列应有可取出的任务');
+        }
+
         $this->assertSame(CountingJob::class, $job['payload']['class']);
         $this->assertSame('a', $job['payload']['data']['tag']);
         $this->assertSame(1, $job['attempts'], 'pop 时应累加尝试次数');

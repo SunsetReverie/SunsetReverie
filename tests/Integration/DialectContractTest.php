@@ -152,7 +152,12 @@ final class DialectContractTest extends TestCase
         ]);
 
         $row = $db->table($this->table)->first();
-        $this->assertTrue($row !== null);
+
+        // 用 fail()（返回 never）而不是 assertTrue：前者能让静态分析收窄
+        // array|null 到 array，否则下面每个 $row['x'] 都会被报「偏移可能不存在」
+        if ($row === null) {
+            $this->fail('应能读回刚插入的行');
+        }
 
         // decimal 必须是字符串：浮点会丢精度（19.99 存成 19.989999...）
         $this->assertSame('19.99', (string) $row['price'], 'DECIMAL 应以字符串读出');

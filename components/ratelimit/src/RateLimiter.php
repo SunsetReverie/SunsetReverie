@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SunsetReverie\RateLimit;
 
+use SunsetReverie\Cache\CacheManager;
 use SunsetReverie\Cache\CacheStoreInterface;
 
 /**
@@ -18,13 +19,28 @@ use SunsetReverie\Cache\CacheStoreInterface;
 final class RateLimiter
 {
     /**
-     * @param CacheStoreInterface $cache 缓存驱动
+     * @param CacheManager $cache 缓存管理器
+     * @param string $store 驱动名（空串表示默认驱动）
      * @param string $prefix 键前缀（多项目共用一个缓存时用于隔离）
      */
     public function __construct(
-        private readonly CacheStoreInterface $cache,
+        private readonly CacheManager $cache,
+        private readonly string $store = '',
         private readonly string $prefix = 'rl:',
     ) {
+    }
+
+    /**
+     * 取当前域对应的缓存驱动。
+     *
+     * 每次取而不是构造时注入：长驻运行时域会切换，
+     * 固定实例会带着上一个域的前缀继续计数。
+     *
+     * @return CacheStoreInterface 缓存驱动
+     */
+    private function store(): CacheStoreInterface
+    {
+        return $this->cache->store($this->store === '' ? null : $this->store);
     }
 
     /**
@@ -43,8 +59,9 @@ final class RateLimiter
         $windowStart = intdiv(time(), $decaySeconds) * $decaySeconds;
         $cacheKey = $this->prefix . $key . ':' . $windowStart;
 
-        $current = (int) $this->cache->get($cacheKey, 0) + 1;
-        $this->cache->put($cacheKey, $current, $decaySeconds);
+        $cache = $this->store();
+        $current = (int) $cache->get($cacheKey, 0) + 1;
+        $cache->put($cacheKey, $current, $decaySeconds);
 
         return new Limit(
             limit: $maxAttempts,
@@ -66,7 +83,7 @@ final class RateLimiter
         $decaySeconds = max(1, $decaySeconds);
         $windowStart = intdiv(time(), $decaySeconds) * $decaySeconds;
 
-        return (int) $this->cache->get($this->prefix . $key . ':' . $windowStart, 0);
+        return (int) $this->store()->get($this->prefix . $key . ':' . $windowStart, 0);
     }
 
     /**
@@ -81,6 +98,6 @@ final class RateLimiter
         $decaySeconds = max(1, $decaySeconds);
         $windowStart = intdiv(time(), $decaySeconds) * $decaySeconds;
 
-        $this->cache->forget($this->prefix . $key . ':' . $windowStart);
+        $this->store()->forget($this->prefix . $key . ':' . $windowStart);
     }
 }

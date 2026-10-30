@@ -21,6 +21,14 @@ final class CacheManager
     /** @var array<string, CacheStoreInterface> 已创建的驱动实例 */
     private array $stores = [];
 
+    /**
+     * 当前实例是按哪个域创建的。
+     *
+     * 长驻运行时（测试、常驻进程）同一进程会处理多个域的请求，
+     * 域变化后必须重建驱动，否则 B 域会读到 A 域的键。
+     */
+    private string $builtForDomain = '';
+
     /** @var array<string, Closure(array<string, mixed>): CacheStoreInterface> 自定义驱动工厂 */
     private array $extensions = [];
 
@@ -46,6 +54,13 @@ final class CacheManager
     public function store(?string $name = null): CacheStoreInterface
     {
         $name ??= (string) ($this->config['default'] ?? 'file');
+
+        $domain = $this->domainContext?->name() ?? '';
+
+        if ($domain !== $this->builtForDomain) {
+            $this->stores = [];
+            $this->builtForDomain = $domain;
+        }
 
         if (isset($this->stores[$name])) {
             return $this->stores[$name];

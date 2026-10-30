@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit;
 
-use SunsetReverie\Cache\Driver\ArrayStore;
+use SunsetReverie\Cache\CacheManager;
 use SunsetReverie\RateLimit\RateLimiter;
 use Tests\TestCase;
 
@@ -24,7 +24,11 @@ final class RateLimiterTest extends TestCase
     protected function setUp(): void
     {
         // ArrayStore 是进程内共享存储，用唯一前缀保证测试之间互不干扰
-        $this->limiter = new RateLimiter(new ArrayStore('test:' . uniqid('', true) . ':'), 'rl:');
+        $this->limiter = new RateLimiter(new CacheManager([
+            'default' => 'array',
+            'prefix' => 'test:' . uniqid('', true) . ':',
+            'stores' => ['array' => ['driver' => 'array']],
+        ]), '', 'rl:');
     }
 
     /**

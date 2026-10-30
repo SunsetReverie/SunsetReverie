@@ -10,7 +10,8 @@ declare(strict_types=1);
  *   php tests/run.php --filter=Container
  *
  * 约定：
- * - 测试类位于 tests/Unit 或 tests/Feature，命名空间分别为 Tests\Unit、Tests\Feature；
+ * - 测试类位于 tests/Unit、tests/Feature 或 tests/Integration，
+ *   命名空间分别为 Tests\Unit、Tests\Feature、Tests\Integration；
  * - 类名与文件名一致（如 tests/Unit/ContainerTest.php → Tests\Unit\ContainerTest）；
  * - 以 test 开头的 public 方法会被执行；
  * - 任一测试失败，进程退出码为 1（可直接用于 CI）。
@@ -53,6 +54,7 @@ $collect = static function (string $directory, string $namespace): array {
 $suites = [
     ...$collect(__DIR__ . '/Unit', 'Tests\\Unit'),
     ...$collect(__DIR__ . '/Feature', 'Tests\\Feature'),
+    ...$collect(__DIR__ . '/Integration', 'Tests\\Integration'),
 ];
 
 $passed = 0;

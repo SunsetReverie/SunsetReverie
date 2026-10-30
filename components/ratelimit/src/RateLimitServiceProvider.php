@@ -27,10 +27,9 @@ final class RateLimitServiceProvider extends ServiceProvider
             /** @var CacheManager $cache */
             $cache = $container->get(CacheManager::class);
 
-            $store = (string) $config->get('ratelimit.store', '');
-
             return new RateLimiter(
-                $cache->store($store === '' ? null : $store),
+                $cache,
+                (string) $config->get('ratelimit.store', ''),
                 (string) $config->get('ratelimit.prefix', 'rl:'),
             );
         });

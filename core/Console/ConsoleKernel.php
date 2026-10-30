@@ -648,7 +648,16 @@ PHP;
      */
     private function lintArchitecture(array $args): int
     {
-        $checker = new \SunsetReverie\Console\Lint\ArchitectureChecker($this->app->basePath());
+        /*
+         * 必须传**框架根**而不是项目根：架构检查扫描的是框架自身的
+         * core/ 与 components/。传 basePath() 时：
+         *   - 在框架仓库里跑，两者相同，看不出问题
+         *   - 在业务项目里跑（bin/sr 是 shim），basePath 是项目根，
+         *     于是找不到 core/Foundation/autoload.php，ARCH-8 直接抛 warning
+         *
+         * __DIR__ 在 shim 场景下仍然指向框架目录，用它推导最可靠。
+         */
+        $checker = new \SunsetReverie\Console\Lint\ArchitectureChecker(dirname(__DIR__, 2));
         $results = $checker->run();
         $failed = 0;
 

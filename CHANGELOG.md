@@ -8,6 +8,52 @@
 
 - 待办见文档 18.3.0「当前验收状态」的缺口列表
 
+## [0.42.0] - 2026-10-30
+
+### 新增
+
+- 测试运行器支持行覆盖率：`--coverage` / `--coverage-min=N` / `--coverage-detail=Xxx`
+- 13 个命令行端到端测试（`tests/Feature/ConsoleCommandTest.php`）
+
+### 修复
+
+- **`sr lint:architecture` 在业务项目里检查的是项目根而非框架根**
+
+`ConsoleKernel` 把 `$app->basePath()`（项目根）传给 `ArchitectureChecker`，
+而架构检查扫描的是框架自身的 `core/` 与 `components/`。
+
+在框架仓库里跑时两者相同，看不出问题；在业务项目里跑（`bin/sr` 是 shim）时，
+`ARCH-8` 读 `core/Foundation/autoload.php` 直接抛 warning：
+
+```text
+file_get_contents(.../core/Foundation/autoload.php): Failed to open stream
+```
+
+改用 `dirname(__DIR__, 2)` 推导框架根——shim 场景下 `__DIR__` 仍指向框架目录。
+
+- **`sr make:migration` 在未配置数据库时失败**
+
+```text
+生成失败：未找到数据库连接配置 [mysql]，请在 config/database.php 中定义
+```
+
+根因：`Migrator` 构造强制要求 `Connection`，而 `make()` 只用到 `directory`。
+新建项目最先要用的命令之一，却要求先配好数据库。
+
+抽出 `Migrator::createFile(directory, name)` 静态方法，`makeMigration` 直接调用。
+
+### 覆盖率现状（首次测量）
+
+| 范围 | 覆盖率 | 行数 |
+| --- | --- | --- |
+| **core（除 Console）** | **82.2%** | 1155 / 1405 |
+| components | 75.6% | 1994 / 2638 |
+| CLI 层（core/Console） | 42.0% | 563 / 1341 |
+| **合计** | **68.9%** | 3712 / 5384 |
+
+CLI 层是主要缺口：40 个命令的实现占了 1341 行，
+且子进程执行的测试不会被父进程 pcov 统计（跨进程限制）。
+
 ## [0.41.0] - 2026-10-30
 
 ### 新增

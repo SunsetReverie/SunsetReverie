@@ -26,8 +26,11 @@ return [
         'decay_seconds' => 60,
     ],
 
-    // 按路由名覆盖规则（路由名在注册时指定，见 7.3）
+    // 按路由名覆盖规则
+    // - 精确匹配优先：'admin.v1.auth.login'
+    // - 支持前缀通配：'admin.*'、'admin.v1.auth.*'（多个命中时取最长）
     'routes' => [
-        // 'login' => ['max_attempts' => 5, 'decay_seconds' => 60],
+        // 'admin.v1.auth.login' => ['max_attempts' => 5, 'decay_seconds' => 60],
+        // 'admin.*' => ['max_attempts' => 120, 'decay_seconds' => 60],
     ],
 ];

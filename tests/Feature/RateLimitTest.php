@@ -114,4 +114,66 @@ final class RateLimitTest extends TestCase
             $this->assertSame(200, $response->status());
         }
     }
+
+    /**
+     * 通配规则应按路由名前缀匹配。
+     *
+     * @return void
+     */
+    public function testWildcardRuleMatchesByPrefix(): void
+    {
+        $app = Application::boot(dirname(__DIR__, 2));
+        $app->config()->set('ratelimit.routes', [
+            'limited.*' => ['max_attempts' => 1, 'decay_seconds' => 60],
+        ]);
+
+        $app->router()->get('/wild', static fn (): array => ['ok' => true], 'limited.wild')
+            ->middleware([ThrottleRequests::class]);
+
+        $this->assertSame(200, $app->handleRequest(Request::create('GET', '/wild'))->status());
+        $this->assertSame(429, $app->handleRequest(Request::create('GET', '/wild'))->status());
+    }
+
+    /**
+     * 多个通配命中时取最长前缀（更具体的优先）。
+     *
+     * @return void
+     */
+    public function testLongestWildcardWins(): void
+    {
+        $app = Application::boot(dirname(__DIR__, 2));
+        $app->config()->set('ratelimit.routes', [
+            'limited.*' => ['max_attempts' => 10, 'decay_seconds' => 60],
+            'limited.strict.*' => ['max_attempts' => 1, 'decay_seconds' => 60],
+        ]);
+
+        $app->router()->get('/wild2', static fn (): array => ['ok' => true], 'limited.strict.wild')
+            ->middleware([ThrottleRequests::class]);
+
+        $this->assertSame(200, $app->handleRequest(Request::create('GET', '/wild2'))->status());
+        $this->assertSame(429, $app->handleRequest(Request::create('GET', '/wild2'))->status(), '应命中 1 次/分钟的更具体规则');
+    }
+
+    /**
+     * 精确规则优先于通配规则。
+     *
+     * @return void
+     */
+    public function testExactRuleBeatsWildcard(): void
+    {
+        $app = Application::boot(dirname(__DIR__, 2));
+        $app->config()->set('ratelimit.routes', [
+            'limited.*' => ['max_attempts' => 1, 'decay_seconds' => 60],
+            'limited.exact' => ['max_attempts' => 3, 'decay_seconds' => 60],
+        ]);
+
+        $app->router()->get('/exact', static fn (): array => ['ok' => true], 'limited.exact')
+            ->middleware([ThrottleRequests::class]);
+
+        for ($i = 0; $i < 3; $i++) {
+            $this->assertSame(200, $app->handleRequest(Request::create('GET', '/exact'))->status());
+        }
+
+        $this->assertSame(429, $app->handleRequest(Request::create('GET', '/exact'))->status());
+    }
 }

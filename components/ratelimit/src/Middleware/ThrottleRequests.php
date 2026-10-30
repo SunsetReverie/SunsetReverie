@@ -70,6 +70,9 @@ final class ThrottleRequests implements MiddlewareInterface
     /**
      * 解析当前请求适用的限流规则。
      *
+     * 匹配优先级：精确路由名 → 前缀通配（最长优先）→ default。
+     * 通配写法：`admin.*`、`admin.v1.auth.*`（尾部 `*` 表示前缀）。
+     *
      * @param Request $request 当前请求
      * @return array<string, mixed> 规则（max_attempts / decay_seconds / by）
      */
@@ -78,8 +81,31 @@ final class ThrottleRequests implements MiddlewareInterface
         $routes = (array) $this->config->get('ratelimit.routes', []);
         $name = (string) $request->attribute('route.name', '');
 
-        if ($name !== '' && isset($routes[$name]) && is_array($routes[$name])) {
-            return $routes[$name];
+        if ($name !== '') {
+            if (isset($routes[$name]) && is_array($routes[$name])) {
+                return $routes[$name];
+            }
+
+            $matched = null;
+            $matchedLength = -1;
+
+            foreach ($routes as $pattern => $rule) {
+                if (!is_array($rule) || !str_ends_with((string) $pattern, '*')) {
+                    continue;
+                }
+
+                $prefix = substr((string) $pattern, 0, -1);
+
+                // 取最长匹配，保证 `admin.v1.*` 优先于 `admin.*`
+                if (str_starts_with($name, $prefix) && strlen($prefix) > $matchedLength) {
+                    $matched = $rule;
+                    $matchedLength = strlen($prefix);
+                }
+            }
+
+            if ($matched !== null) {
+                return $matched;
+            }
         }
 
         return (array) $this->config->get('ratelimit.default', ['max_attempts' => 60, 'decay_seconds' => 60]);

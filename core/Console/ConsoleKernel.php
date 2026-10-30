@@ -171,8 +171,10 @@ final class ConsoleKernel
      */
     private function generateDomainSkeleton(string $target, string $appName, array $domains): int
     {
-        // 单域入口与多域并存会让人分不清，直接移除
+        // 单域骨架残留物：路由入口与示例控制器都会变成死文件，一并移除
         @unlink($target . '/routes/api.php');
+        @unlink($target . '/app/Controller/HomeController.php');
+        @rmdir($target . '/app/Controller');
 
         $definitions = [];
 

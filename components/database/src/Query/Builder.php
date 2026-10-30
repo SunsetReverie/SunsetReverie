@@ -302,19 +302,19 @@ final class Builder
      * @return string 主键值
      * @throws QueryException 执行失败时抛出
      */
-    public function insertGetId(array $data, string $primaryKey = 'id'): string
+    public function insertGetId(array $data, string $primaryKey = 'id'): int
     {
         if ($this->connection->driver() === 'pgsql') {
             $this->assertIdentifier($primaryKey);
             $sql = $this->toInsertSql($data) . sprintf(' RETURNING %s', $primaryKey);
             $value = $this->connection->scalar($sql, array_values($data));
 
-            return (string) $value;
+            return (int) $value;
         }
 
         $this->connection->affect($this->toInsertSql($data), array_values($data));
 
-        return $this->connection->lastInsertId();
+        return (int) $this->connection->lastInsertId();
     }
 
     /**

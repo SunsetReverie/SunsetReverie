@@ -54,16 +54,17 @@ final class ImageTest extends TestCase
      */
     public function testReadsImageInfo(): void
     {
-        $manager = $this->manager();
         $source = $this->makeImage(400, 200);
 
-        $info = $manager->open($source)->info();
+        foreach ($this->managers() as $name => $manager) {
+            $info = $manager->open($source)->info();
 
-        $this->assertSame(400, $info->width);
-        $this->assertSame(200, $info->height);
-        $this->assertSame('image/png', $info->mime);
-        $this->assertSame('png', $info->format);
-        $this->assertTrue($info->isLandscape());
+            $this->assertSame(400, $info->width, "[{$name}] 宽");
+            $this->assertSame(200, $info->height, "[{$name}] 高");
+            $this->assertSame('image/png', $info->mime, "[{$name}] MIME");
+            $this->assertSame('png', $info->format, "[{$name}] 格式标识");
+            $this->assertTrue($info->isLandscape(), "[{$name}] 应为横向");
+        }
     }
 
     /**
@@ -73,13 +74,14 @@ final class ImageTest extends TestCase
      */
     public function testResizeByWidthKeepsRatio(): void
     {
-        $manager = $this->manager();
-        $result = $manager->open($this->makeImage(400, 200))
-            ->resize(100, 0)
-            ->save($this->path('w.png'));
+        $source = $this->makeImage(400, 200);
 
-        $this->assertSame(100, $result->width);
-        $this->assertSame(50, $result->height);
+        foreach ($this->managers() as $name => $manager) {
+            $result = $manager->open($source)->resize(100, 0)->save($this->path("w-{$name}.png"));
+
+            $this->assertSame(100, $result->width, "[{$name}] 宽应为 100");
+            $this->assertSame(50, $result->height, "[{$name}] 高应按比例缩为 50");
+        }
     }
 
     /**
@@ -89,22 +91,22 @@ final class ImageTest extends TestCase
      */
     public function testResizeFitDoesNotUpscale(): void
     {
-        $manager = $this->manager();
+        $big = $this->makeImage(400, 200);
+        $small = $this->makeImage(100, 100);
 
-        // 400x200 装进 100x100 的框 → 100x50（受宽度限制）
-        $result = $manager->open($this->makeImage(400, 200))
-            ->resize(100, 100, 'fit')
-            ->save($this->path('fit.png'));
+        foreach ($this->managers() as $name => $manager) {
+            // 400x200 装进 100x100 的框 → 100x50（受宽度限制）
+            $result = $manager->open($big)->resize(100, 100, 'fit')->save($this->path("fit-{$name}.png"));
 
-        $this->assertSame(100, $result->width);
-        $this->assertSame(50, $result->height);
+            $this->assertSame(100, $result->width, "[{$name}] 宽");
+            $this->assertSame(50, $result->height, "[{$name}] 高");
 
-        // 100x100 装进 400x400 → 保持 100x100（不放大）
-        $same = $manager->open($this->makeImage(100, 100))
-            ->resize(400, 400, 'fit')
-            ->save($this->path('fit2.png'));
+            // 100x100 装进 400x400 → 保持 100x100（不放大）
+            $same = $manager->open($small)->resize(400, 400, 'fit')->save($this->path("fit2-{$name}.png"));
 
-        $this->assertSame(100, $same->width, 'fit 不应放大');
+            $this->assertSame(100, $same->width, "[{$name}] fit 不应放大");
+            $this->assertSame(100, $same->height, "[{$name}] fit 不应放大");
+        }
     }
 
     /**
@@ -130,15 +132,15 @@ final class ImageTest extends TestCase
      */
     public function testCoverProducesExactSize(): void
     {
-        $manager = $this->manager();
-
         foreach ([[400, 200], [200, 400], [500, 500]] as $index => [$w, $h]) {
-            $result = $manager->open($this->makeImage($w, $h))
-                ->cover(300, 300)
-                ->save($this->path('cover-' . $index . '.png'));
+            $source = $this->makeImage($w, $h);
 
-            $this->assertSame(300, $result->width, sprintf('%dx%d cover 后宽应为 300', $w, $h));
-            $this->assertSame(300, $result->height, sprintf('%dx%d cover 后高应为 300', $w, $h));
+            foreach ($this->managers() as $name => $manager) {
+                $result = $manager->open($source)->cover(300, 300)->save($this->path("cover-{$name}-{$index}.png"));
+
+                $this->assertSame(300, $result->width, sprintf('[%s] %dx%d cover 后宽应为 300', $name, $w, $h));
+                $this->assertSame(300, $result->height, sprintf('[%s] %dx%d cover 后高应为 300', $name, $w, $h));
+            }
         }
     }
 
@@ -149,13 +151,14 @@ final class ImageTest extends TestCase
      */
     public function testCropCentersByDefault(): void
     {
-        $manager = $this->manager();
-        $result = $manager->open($this->makeImage(400, 300))
-            ->crop(100, 100)
-            ->save($this->path('crop.png'));
+        $source = $this->makeImage(400, 300);
 
-        $this->assertSame(100, $result->width);
-        $this->assertSame(100, $result->height);
+        foreach ($this->managers() as $name => $manager) {
+            $result = $manager->open($source)->crop(100, 100)->save($this->path("crop-{$name}.png"));
+
+            $this->assertSame(100, $result->width, "[{$name}] 裁切宽");
+            $this->assertSame(100, $result->height, "[{$name}] 裁切高");
+        }
     }
 
     /**
@@ -165,13 +168,15 @@ final class ImageTest extends TestCase
      */
     public function testFormatConversion(): void
     {
-        $manager = $this->manager();
-        $result = $manager->open($this->makeImage(200, 200))
-            ->format('jpg')
-            ->save($this->path('converted.jpg'));
+        $source = $this->makeImage(200, 200);
 
-        $this->assertSame('image/jpeg', $result->mime);
-        $this->assertSame(200, $result->width);
+        foreach ($this->managers() as $name => $manager) {
+            $result = $manager->open($source)->format('jpg')->save($this->path("converted-{$name}.jpg"));
+
+            $this->assertSame('image/jpeg', $result->mime, "[{$name}] MIME 应为 image/jpeg");
+            $this->assertSame(200, $result->width, "[{$name}] 尺寸不应变化");
+            $this->assertTrue(is_file($result->path), "[{$name}] 文件应存在");
+        }
     }
 
     /**
@@ -181,20 +186,27 @@ final class ImageTest extends TestCase
      */
     public function testTransparentBecomesWhiteOnJpeg(): void
     {
-        $manager = $this->manager();
         $source = $this->makeImage(100, 100, alpha: true);
 
-        $manager->open($source)->format('jpg')->save($this->path('white.jpg'));
+        foreach ($this->managers() as $name => $manager) {
+            $target = $this->path("white-{$name}.jpg");
+            $manager->open($source)->format('jpg')->save($target);
 
-        $decoded = imagecreatefromjpeg($this->path('white.jpg'));
-        $this->assertTrue($decoded !== false);
-        $rgb = imagecolorsforindex($decoded, imagecolorat($decoded, 5, 5));
-        imagedestroy($decoded);
+            $decoded = imagecreatefromjpeg($target);
+            $this->assertTrue($decoded !== false, "[{$name}] 输出应可解码");
+            $rgb = imagecolorsforindex($decoded, imagecolorat($decoded, 5, 5));
 
-        $this->assertTrue(
-            $rgb['red'] > 240 && $rgb['green'] > 240 && $rgb['blue'] > 240,
-            sprintf('透明区应填白，实际 rgb(%d,%d,%d)——填黑说明 flatten 没生效', $rgb['red'], $rgb['green'], $rgb['blue'])
-        );
+            $this->assertTrue(
+                $rgb['red'] > 240 && $rgb['green'] > 240 && $rgb['blue'] > 240,
+                sprintf(
+                    '[%s] 透明区应填白，实际 rgb(%d,%d,%d)——填黑说明 flatten 没生效',
+                    $name,
+                    $rgb['red'],
+                    $rgb['green'],
+                    $rgb['blue']
+                )
+            );
+        }
     }
 
     /**
@@ -310,13 +322,33 @@ final class ImageTest extends TestCase
     }
 
     /**
-     * 构造管理器（当前环境有什么用什么）。
+     * 构造管理器（GD）。
      *
      * @return ImageManager 管理器
      */
     private function manager(): ImageManager
     {
         return new ImageManager(['driver' => 'gd', 'jpeg_quality' => 82]);
+    }
+
+    /**
+     * 返回所有可用驱动。
+     *
+     * 尺寸与格式语义是**跨驱动契约**：同样的输入 + 同样的操作，
+     * GD 与 Imagick 必须得到同样的宽高与 MIME。
+     * 允许像素细节（重采样锐度、压缩误差）不同，但不允许尺寸漂移。
+     *
+     * @return array<string, ImageManager> 驱动名 => 管理器
+     */
+    private function managers(): array
+    {
+        $managers = ['gd' => new ImageManager(['driver' => 'gd', 'jpeg_quality' => 82])];
+
+        if (\SunsetReverie\Image\Driver\ImagickDriver::available()) {
+            $managers['imagick'] = new ImageManager(['driver' => 'imagick', 'jpeg_quality' => 82]);
+        }
+
+        return $managers;
     }
 
     /**
@@ -343,7 +375,6 @@ final class ImageTest extends TestCase
 
         $path = $this->path('src-' . bin2hex(random_bytes(4)) . '.png');
         imagepng($image, $path);
-        imagedestroy($image);
 
         return $path;
     }
@@ -369,7 +400,6 @@ final class ImageTest extends TestCase
 
         $path = $this->path('noise-' . bin2hex(random_bytes(4)) . '.png');
         imagepng($image, $path);
-        imagedestroy($image);
 
         return $path;
     }
@@ -396,5 +426,79 @@ final class ImageTest extends TestCase
     private function path(string $name): string
     {
         return $this->directory . '/' . $name;
+    }
+
+    /**
+     * EXIF 方向校正：Orientation=6/8 的照片应旋转 90°。
+     *
+     * 为什么必须测：手机竖拍的照片带 Orientation 元数据，但像素其实是横的。
+     * 不校正的话，用户上传后会看到「照片躺倒了」——而这个 bug 用普通测试图
+     * （无 EXIF）永远发现不了，因为 Orientation 恒为 1。
+     *
+     * @return void
+     */
+    public function testExifOrientationRotates(): void
+    {
+        // EXIF 只能注入 JPEG，先把测试图转成 jpg
+        $base = $this->path('exif-base.jpg');
+        $decoded = imagecreatefrompng($this->makeImage(400, 300));
+        $this->assertTrue($decoded !== false);
+        imagejpeg($decoded, $base, 92);
+
+        foreach ($this->managers() as $name => $manager) {
+            foreach ([6, 8] as $orientation) {
+                $file = $this->path("exif-{$orientation}-{$name}.jpg");
+                $this->injectExifOrientation($base, $file, $orientation);
+
+                $info = $manager->open($file)->info();
+                $this->assertSame($orientation, $info->orientation, "[{$name}] 应读到 Orientation={$orientation}");
+
+                $result = $manager->open($file)->save($this->path("oriented-{$orientation}-{$name}.jpg"));
+
+                $this->assertSame(300, $result->width, "[{$name}] Orientation={$orientation} 旋转后宽应为 300");
+                $this->assertSame(400, $result->height, "[{$name}] Orientation={$orientation} 旋转后高应为 400");
+            }
+
+            // Orientation=1 不应旋转
+            $plain = $this->path("exif-1-{$name}.jpg");
+            $this->injectExifOrientation($base, $plain, 1);
+            $result = $manager->open($plain)->save($this->path("oriented-1-{$name}.jpg"));
+
+            $this->assertSame(400, $result->width, "[{$name}] Orientation=1 不应旋转");
+            $this->assertSame(300, $result->height, "[{$name}] Orientation=1 不应旋转");
+        }
+    }
+
+    /**
+     * 在 JPEG 的 SOI 之后插入最小 EXIF APP1 段（只含 Orientation）。
+     *
+     * 手工构造是因为：`Imagick::setImageOrientation()` 只改内存属性，
+     * 不会写进文件，用它造测试数据会得到「注入成功但读回来是 1」的假象。
+     *
+     * @param string $source 源文件
+     * @param string $target 目标文件
+     * @param int $orientation 方向值（1/3/6/8）
+     * @return void
+     */
+    private function injectExifOrientation(string $source, string $target, int $orientation): void
+    {
+        $data = (string) file_get_contents($source);
+
+        if (substr($data, 0, 2) !== "\xFF\xD8") {
+            return;
+        }
+
+        // TIFF little-endian 头：字节序 + magic 42 + IFD0 偏移
+        $tiff = 'II' . pack('v', 42) . pack('V', 8);
+
+        // IFD0：1 个条目 —— tag=0x0112(Orientation), type=3(SHORT), count=1
+        $ifd = pack('v', 1)
+            . pack('v', 0x0112) . pack('v', 3) . pack('V', 1) . pack('v', $orientation) . pack('v', 0)
+            . pack('V', 0);
+
+        $payload = "Exif\x00\x00" . $tiff . $ifd;
+        $app1 = "\xFF\xE1" . pack('n', strlen($payload) + 2) . $payload;
+
+        file_put_contents($target, "\xFF\xD8" . $app1 . substr($data, 2));
     }
 }

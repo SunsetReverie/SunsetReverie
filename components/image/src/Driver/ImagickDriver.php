@@ -324,7 +324,15 @@ final class ImagickDriver implements ImageDriverInterface
 
         // 透明度：0-100 → 0-1
         $opacity = max(0, min(100, (int) ($args['opacity'] ?? 80))) / 100;
-        $mark->setImageOpacity($opacity);
+
+        if (method_exists($mark, 'setImageOpacity')) {
+            // ImageMagick 6
+            $mark->setImageOpacity($opacity);
+        } else {
+            // ImageMagick 7 移除了 setImageOpacity，改用 alpha 通道乘法
+            $mark->setImageAlpha(1.0);
+            $mark->evaluateImage(Imagick::EVALUATE_MULTIPLY, $opacity, Imagick::CHANNEL_ALPHA);
+        }
 
         $offset = (int) ($args['offset'] ?? 10);
         $x = match ((string) ($args['position'] ?? 'bottom-right')) {

@@ -8,6 +8,36 @@
 
 - 待办见文档 18.3.0「当前验收状态」的缺口列表
 
+## [0.35.0] - 2026-10-30
+
+### 修复
+
+- **`Imagick::setImageOpacity()` 在 ImageMagick 7 已被移除**，`watermark()` 直接抛
+  `Call to undefined method`。改用 `setImageAlpha()` + `evaluateImage(EVALUATE_MULTIPLY, CHANNEL_ALPHA)`，
+  用 `method_exists` 分支兼容 IM6
+
+### 新增
+
+- EXIF 方向校正的**真实测试**。此前用 `Imagick::setImageOrientation()` 造数据，
+  但它只改内存属性、不写进文件，读回来永远是 1——等于这段代码从未被验证过。
+  改为手工注入最小 EXIF APP1 段（TIFF 头 + IFD0 + Orientation tag），
+  实测 `Orientation=6/8` 时两驱动都正确旋转成 300×400
+
+### 变更
+
+- 图片测试改为**双驱动对照**：尺寸语义（`fit`/`exact`/`cover`/`crop`）、格式转换、
+  透明填白在 GD 与 Imagick 上各跑一遍，断言信息带驱动名
+
+### 实测对比（1600×1200 源图）
+
+| 操作 | GD | Imagick |
+| --- | --- | --- |
+| `cover(300,300)` → webp 80 | 6.9 KB / 15ms | 7.3 KB / 44ms |
+| `resize(800,0)` → jpg 90 | 66.9 KB / 19ms | 62.8 KB / 45ms |
+
+Imagick 慢 2–3 倍（Lanczos 重采样 + 进程外编解码），但压缩率略好。
+`auto` 模式优先选 Imagick，需要速度的项目可显式配 `driver => gd`。
+
 ## [0.34.0] - 2026-10-30
 
 ### 新增

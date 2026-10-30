@@ -204,14 +204,20 @@ final class Router
     {
         $path = $this->normalizePath($path);
 
-        $static = $this->static[$method . ' ' . $path] ?? $this->static['ANY ' . $path] ?? null;
+        // HTTP 语义：HEAD 等价于 GET（同样的响应头，不带 body）。
+        // 监控探活普遍用 HEAD，若不回退会一律 405。
+        $candidates = $method === 'HEAD' ? ['HEAD', 'GET'] : [$method];
 
-        if ($static !== null) {
-            return ['route' => $static, 'params' => []];
+        foreach ($candidates as $candidate) {
+            $static = $this->static[$candidate . ' ' . $path] ?? $this->static['ANY ' . $path] ?? null;
+
+            if ($static !== null) {
+                return ['route' => $static, 'params' => []];
+            }
         }
 
         foreach ($this->dynamic as $route) {
-            if (!$route->supports($method)) {
+            if (!$route->supports($method) && !($method === 'HEAD' && $route->supports('GET'))) {
                 continue;
             }
 

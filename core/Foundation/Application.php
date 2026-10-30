@@ -62,7 +62,7 @@ use SunsetReverie\Validation\Validator;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.21.1';
+    public const VERSION = '0.22.0';
 
     private static ?self $instance = null;
 
@@ -341,8 +341,10 @@ final class Application
                 $matched === null ? [] : ($matched['route']->domain?->middlewareAliases ?? []),
             );
 
+        $response = null;
+
         try {
-            return $this->pipeline
+            $response = $this->pipeline
                 ->send($request)
                 ->through($middleware)
                 ->then(function (Request $request) use ($matched, $dispatchError): Response {
@@ -361,11 +363,18 @@ final class Application
         } catch (Throwable $e) {
             // 中间件自身抛出的异常（如认证失败）：此时外层中间件的后置逻辑不会执行，
             // 因此这里补上基础的追踪与安全头，保证错误响应与正常响应同样安全。
-            return $this->errorHandler->render($e, $request)
+            $response = $this->errorHandler->render($e, $request)
                 ->withHeader('X-Request-Id', $request->requestId)
                 ->withHeader('X-Content-Type-Options', 'nosniff')
                 ->withHeader('X-Frame-Options', 'DENY');
         }
+
+        // HTTP 语义：HEAD 与 GET 返回同样的状态码与响应头，但不带响应体
+        if ($request->method === 'HEAD') {
+            $response = new Response('', $response->status(), $response->headers());
+        }
+
+        return $response;
     }
 
     /**

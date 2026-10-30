@@ -66,6 +66,32 @@
 > **边界**：框架不提供行级权限（RLS）或自动的数据归属过滤。
 > 业务层写漏了 `where user_id` 框架不会拦。
 
+### 响应头（防 CRLF 注入）
+
+`Response::withHeader()` 会对字段名与值做清洗：
+
+- 字段名按 RFC 7230 的 token 字符白名单过滤（`[^!#$%&'*+.^_`|~0-9A-Za-z-]` 全部剔除）
+- 字段值剥掉 `\r`、`\n`、`\0`
+
+不这么做的话，把用户输入塞进头里就可能造成响应拆分：
+
+```php
+->withHeader('X-User', $request->query('name'))
+// 请求 name = "alice\r\nSet-Cookie: admin=1"
+```
+
+PHP 的 `header()` 自身对换行会告警，但**告警不等于防护**——换个 SAPI 或关掉警告就静默失效。
+
+### 分页与请求体
+
+| 项 | 机制 |
+| --- | --- |
+| 分页上限 | `Request::perPage()` 读 `config('pagination.max_per_page')` 夹取；默认 50 |
+| 请求体大小 | `body.size` 中间件按 `Content-Length` 拒绝超限请求，返回 413 |
+
+请求体检查**只看声明的长度、不读 body**——读完再判断正是要避免的内存问题。
+客户端可以不发 `Content-Length`（分块传输），这种情况由 SAPI 的 `post_max_size` 兜底。
+
 ### 认证
 
 - Token 绑定 API 域：`web` 域的 token 不能访问 `admin` 域（返回 `20010`）
@@ -118,7 +144,8 @@
 - [ ] 数据库账号最小权限（不要用 root）
 - [ ] `storage/` 目录不可通过 Web 直接访问（除 `uploads/`）
 - [ ] `storage/uploads/` 禁止执行 PHP
-- [ ] Nginx `client_max_body_size` 与 `upload.max_size` 对齐（否则大文件返回 HTML 而非 JSON）
+- [ ] Nginx `client_max_body_size` 与 `http.max_body_size`、`upload.max_size` 三者对齐
+      （框架层的 `body.size` 中间件能拦，但 Nginx 更早；值不一致会出现「小文件过、大文件返回 HTML」）
 - [ ] 生产环境缓存驱动用 Redis（`file` 在多机部署下不一致）
 - [ ] `cache.prefix` 非空（否则 `flush` 会清空整个 Redis 库——框架已拒绝执行，但仍需配置）
 - [ ] 限流阈值按实际流量调整

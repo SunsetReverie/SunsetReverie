@@ -171,9 +171,47 @@ final class Response
     public function withHeader(string $name, string $value): self
     {
         $clone = clone $this;
-        $clone->headers[$name] = $value;
+        $clone->headers[self::sanitizeHeaderName($name)] = self::sanitizeHeaderValue($value);
 
         return $clone;
+    }
+
+    /*
+     * 为什么要在设置时就清洗，而不是信任调用方：
+     *
+     * 响应头里出现 `\r\n` 会把一个头拆成两个（HTTP 响应拆分 / CRLF 注入）。
+     * 典型场景是把用户输入直接塞进头里：
+     *
+     *   ->withHeader('X-User', $request->query('name'))
+     *   // 请求 name = "a\r\nSet-Cookie: admin=1"
+     *
+     * PHP 的 header() 自身对换行会告警，但告警不等于防护——
+     * 一旦哪天关掉警告或换成别的 SAPI，就静默失效了。
+     */
+
+    /**
+     * 清洗响应头字段名。
+     *
+     * RFC 7230 规定字段名只能是 token 字符（字母数字与 `!#$%&'*+-.^_`|~`），
+     * 其余字符（含冒号、空格、换行）一律剔除——否则可能被用来注入新头。
+     *
+     * @param string $name 字段名
+     * @return string 清洗后的字段名
+     */
+    private static function sanitizeHeaderName(string $name): string
+    {
+        return (string) preg_replace('/[^!#$%&\'*+.^_`|~0-9A-Za-z-]/', '', $name);
+    }
+
+    /**
+     * 清洗响应头字段值。
+     *
+     * @param string $value 字段值
+     * @return string 清洗后的值
+     */
+    private static function sanitizeHeaderValue(string $value): string
+    {
+        return str_replace(["\r", "\n", "\0"], '', $value);
     }
 
     /**

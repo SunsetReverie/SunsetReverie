@@ -152,6 +152,33 @@ final class Request
     }
 
     /**
+     * 取分页大小（统一夹取）。
+     *
+     * 为什么要有这个方法：分页上限原来散落在每个领域服务里写 `min(50, ...)`，
+     * 各写各的数字——改上限要翻遍代码，漏改一处就能被拉出 10 万条。
+     *
+     * @param int $default 客户端未指定时的默认值
+     * @param int|null $max 上限（null 表示读 config('pagination.max_per_page')）
+     * @return int 夹取后的每页条数
+     */
+    public function perPage(int $default = 20, ?int $max = null): int
+    {
+        $max ??= (int) config('pagination.max_per_page', 50);
+
+        return max(1, min(max(1, $max), (int) $this->query('per_page', (string) $default)));
+    }
+
+    /**
+     * 取页码（从 1 开始）。
+     *
+     * @return int 页码
+     */
+    public function page(): int
+    {
+        return max(1, (int) $this->query('page', '1'));
+    }
+
+    /**
      * 读取查询参数。
      *
      * @param string $key 参数名

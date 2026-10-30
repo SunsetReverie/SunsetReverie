@@ -8,6 +8,55 @@
 
 - 待办见文档 18.3.0「当前验收状态」的缺口列表
 
+## [0.43.0] - 2026-10-30
+
+### 修复
+
+按文档 11.6「输入输出安全清单」逐条核对后，补齐 3 项缺口。
+
+- **响应头 CRLF 注入**
+
+`Response::withHeader()` 此前直接把值塞进 headers 数组。若 header 值来自用户输入：
+
+```php
+->withHeader('X-User', $request->query('name'))
+// name = "alice\r\nSet-Cookie: admin=1"
+```
+
+会拆出额外的响应头（响应拆分）。PHP 的 `header()` 对换行会告警，
+但告警不等于防护——换 SAPI 或关掉警告就静默失效。
+
+现在：字段名按 RFC 7230 token 字符白名单过滤，值剥掉 `\r` `\n` `\0`。
+
+- **分页无统一上限**
+
+分页大小原来由各领域服务自己写 `min(50, ...)`，各写各的数字，
+漏改一处就能被拉出 10 万条。
+
+新增 `Request::perPage()` / `Request::page()`，上限读 `config('pagination.max_per_page')`。
+
+- **请求体大小无框架层限制**
+
+依赖 Nginx 的 `client_max_body_size`，FPM 直连、内置服务器、容器内互调都没有这层保护。
+
+新增 `EnsureBodySize` 中间件（别名 `body.size`）：只看 `Content-Length`，
+超限直接 413，**不读 body**——读完再判断正是要避免的内存问题。
+分块传输（无 Content-Length）放行，由 SAPI 的 `post_max_size` 兜底。
+
+### 说明
+
+11.6 的 10 项里，另有 2 项标为「不适用」而非「未实现」：
+
+- SSRF：框架没有 HTTP 客户端组件，没有可被利用的出口
+- `Path::safeJoin`：当前无「用户提供路径」的文件操作场景
+
+这两项的前提一旦变化（新增 HTTP 客户端 / 文件下载功能）必须重估。
+
+### 新增
+
+- `skeleton/config/pagination.php`、`skeleton/config/http.php`
+- `tests/Unit/SecurityHardeningTest.php`（6 个用例）
+
 ## [0.42.0] - 2026-10-30
 
 ### 新增

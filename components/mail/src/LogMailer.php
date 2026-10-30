@@ -27,7 +27,8 @@ final class LogMailer implements MailerInterface
      */
     public function send(Message $message): void
     {
-        $this->log->info('邮件（未实际发送）', [
+        // LogManager 没有 info()，只靠 __call 转发；显式取 channel 更清楚
+        $this->log->channel()->info('邮件（未实际发送）', [
             'to' => $message->to,
             'subject' => $message->subject,
             'text' => $message->plainText(),

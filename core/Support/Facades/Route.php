@@ -15,8 +15,8 @@ use SunsetReverie\Support\Facade;
  * @method static \SunsetReverie\Routing\Route put(string $uri, mixed $handler, ?string $name = null)
  * @method static \SunsetReverie\Routing\Route patch(string $uri, mixed $handler, ?string $name = null)
  * @method static \SunsetReverie\Routing\Route delete(string $uri, mixed $handler, ?string $name = null)
- * @method static void group(array $attributes, \Closure $callback)
- * @method static array routes()
+ * @method static void group(array<string, mixed> $attributes, \Closure $callback)
+ * @method static list<mixed> routes()
  */
 final class Route extends Facade
 {

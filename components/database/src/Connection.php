@@ -118,6 +118,14 @@ final class Connection
         return $this->affect($sql, $bindings);
     }
 
+    /**
+     * 执行写语句并返回影响行数。
+     *
+     * @param string $sql SQL
+     * @param list<mixed> $bindings 绑定值
+     * @return int 受影响行数
+     * @throws QueryException 执行失败时抛出
+     */
     public function affect(string $sql, array $bindings = []): int
     {
         return $this->run($sql, $bindings)->rowCount();

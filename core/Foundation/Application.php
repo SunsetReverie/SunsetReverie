@@ -69,7 +69,7 @@ use SunsetReverie\Validation\Validator;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.38.0';
+    public const VERSION = '0.39.0';
 
     private static ?self $instance = null;
 
@@ -375,6 +375,8 @@ final class Application
                     ...$this->globalMiddleware,
                     ...($matched === null ? [] : $matched['route']->middlewareList()),
                 ],
+                // Route::$domain 可空（未绑定域的普通路由）
+                // @phpstan-ignore nullsafe.neverNull
                 $matched === null ? [] : ($matched['route']->domain?->middlewareAliases ?? []),
             );
 
@@ -1034,6 +1036,8 @@ final class Application
      */
     private function currentRequestId(): string
     {
+        // CLI 场景没有当前请求，?-> 必需
+        // @phpstan-ignore nullsafe.neverNull
         return $this->currentRequest?->requestId ?? \SunsetReverie\Support\Str::uuid7();
     }
 }

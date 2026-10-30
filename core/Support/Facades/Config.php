@@ -12,7 +12,7 @@ use SunsetReverie\Support\Facade;
  * @method static mixed get(string $key, mixed $default = null)
  * @method static void set(string $key, mixed $value)
  * @method static bool has(string $key)
- * @method static array all()
+ * @method static array<string, mixed> all()
  */
 final class Config extends Facade
 {

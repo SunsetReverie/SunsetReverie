@@ -34,7 +34,7 @@ final class GdDriver implements ImageDriverInterface
 
     /**
      * @param int $memoryLimitBytes 允许的解码内存上限（0 表示按 php.ini 计算）
-     * @param string $jpegQuality 默认 JPEG 质量
+     * @param int $jpegQuality 默认 JPEG 质量（1-100）
      */
     public function __construct(
         private readonly int $memoryLimitBytes = 0,

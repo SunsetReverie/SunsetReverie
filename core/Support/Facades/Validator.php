@@ -9,8 +9,8 @@ use SunsetReverie\Support\Facade;
 /**
  * 校验门面。
  *
- * @method static array validate(array $data, array $rules)
- * @method static array errors(array $data, array $rules)
+ * @method static array<string, mixed> validate(array<string, mixed> $data, array<string, mixed> $rules)
+ * @method static array<string, list<string>> errors(array<string, mixed> $data, array<string, mixed> $rules)
  */
 final class Validator extends Facade
 {

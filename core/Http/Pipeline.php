@@ -18,7 +18,7 @@ use SunsetReverie\Http\Middleware\MiddlewareInterface;
  */
 final class Pipeline
 {
-    /** @var list<class-string<MiddlewareInterface>|Closure> */
+    /** @var list<class-string<MiddlewareInterface>|MiddlewareInterface|Closure> */
     private array $pipes = [];
 
     private ?Request $passable = null;
@@ -46,7 +46,8 @@ final class Pipeline
     /**
      * 设置中间件列表。
      *
-     * @param list<class-string<MiddlewareInterface>|Closure> $pipes 中间件
+     * @param list<class-string<MiddlewareInterface>|MiddlewareInterface|Closure> $pipes 中间件
+     *        三种形态都支持：Closure（直接调用）、实例（已解析过）、类名（走容器）
      * @return self 管道实例
      */
     public function through(array $pipes): self

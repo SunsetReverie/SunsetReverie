@@ -1407,23 +1407,10 @@ PHP;
         }
 
         $this->line(sprintf('开始消费队列 [%s]（Ctrl+C 退出）', $queue));
-        $handled = 0;
 
-        while (true) {
-            $result = $worker->processOne();
-
-            if ($result === null) {
-                sleep(1);
-
-                continue;
-            }
-
-            $this->line('  ' . $result);
-            $handled++;
-
-            if ($max > 0 && $handled >= $max) {
-                break;
-            }
+        // 节奏由 Worker 管（sleepSeconds），这里只管输出
+        foreach ($worker->work($max) as $line) {
+            $this->line('  ' . $line);
         }
 
         return 0;
@@ -2016,23 +2003,6 @@ PHP;
         return null;
     }
 
-    /**
-     * 判断是否传入了某个选项（--name 或 --name=value）。
-     *
-     * @param list<string> $args 参数
-     * @param string $name 选项名
-     * @return bool 存在返回 true
-     */
-    private function hasOption(array $args, string $name): bool
-    {
-        foreach ($args as $arg) {
-            if ($arg === '--' . $name || str_starts_with($arg, '--' . $name . '=')) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     /**
      * 读取 --key=value 形式的选项。

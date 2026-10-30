@@ -65,6 +65,8 @@ final class VendorCoexistTest extends TestCase
             class_exists('Acme\\Probe\\Marker'),
             '业务项目 vendor 里的类应可加载（框架不阻断 Composer）'
         );
+        // Acme\Probe\Marker 由 installFakeVendor() 在运行时生成，静态分析看不到
+        // @phpstan-ignore class.notFound
         $this->assertSame('ok', \Acme\Probe\Marker::value());
     }
 

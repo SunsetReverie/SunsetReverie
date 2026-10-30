@@ -55,7 +55,7 @@ final class MakeCommands
     {
         $name = $this->firstArgument($args) ?? '';
 
-        if ($name === null || $name === '') {
+        if ($name === '') {
             $this->error('用法：sr make:controller Admin/PostController');
 
             return 2;

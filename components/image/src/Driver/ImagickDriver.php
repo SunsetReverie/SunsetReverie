@@ -325,13 +325,20 @@ final class ImagickDriver implements ImageDriverInterface
         // 透明度：0-100 → 0-1
         $opacity = max(0, min(100, (int) ($args['opacity'] ?? 80))) / 100;
 
-        if (method_exists($mark, 'setImageOpacity')) {
-            // ImageMagick 6
-            $mark->setImageOpacity($opacity);
-        } else {
-            // ImageMagick 7 移除了 setImageOpacity，改用 alpha 通道乘法
+        /*
+         * ImageMagick 6 有 setImageOpacity，7 移除了。
+         *
+         * 不能用 method_exists() 判断：PHP 的 imagick 扩展 stub 里两个版本都声明了
+         * 这个方法，method_exists 恒为 true，但调用时 IM7 会抛
+         * "Call to undefined method"。只能按 ImageMagick 主版本判断。
+         */
+        $isImageMagick7 = version_compare(self::imageMagickVersion(), '7.0.0', '>=');
+
+        if ($isImageMagick7) {
             $mark->setImageAlpha(1.0);
             $mark->evaluateImage(Imagick::EVALUATE_MULTIPLY, $opacity, Imagick::CHANNEL_ALPHA);
+        } else {
+            $mark->setImageOpacity($opacity);
         }
 
         $offset = (int) ($args['offset'] ?? 10);
@@ -348,6 +355,23 @@ final class ImagickDriver implements ImageDriverInterface
 
         $image->compositeImage($mark, Imagick::COMPOSITE_OVER, max(0, $x), max(0, $y));
         $mark->clear();
+    }
+
+    /**
+     * 取 ImageMagick 主版本号。
+     *
+     * @return string 如 "7.1.2"
+     */
+    private static function imageMagickVersion(): string
+    {
+        $version = Imagick::getVersion()['versionString'] ?? '';
+
+        // 形如 "ImageMagick 7.1.2-34 Q16-HDRI aarch64 ..."
+        if (preg_match('/ImageMagick\s+(\d+\.\d+\.\d+)/i', $version, $m) === 1) {
+            return $m[1];
+        }
+
+        return '6.0.0';
     }
 
     /**

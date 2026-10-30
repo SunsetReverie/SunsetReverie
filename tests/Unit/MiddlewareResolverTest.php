@@ -61,7 +61,12 @@ final class MiddlewareResolverTest extends TestCase
 
         $resolved = $resolver->resolve(['throttle:300,60']);
 
-        $this->assertTrue($resolved[0] instanceof ParameterizedMiddleware);
+        // 用 early-return 而不是 assertTrue：assertTrue 不会让静态分析收窄类型，
+        // 后续访问 ->parameters 会被判为「在 callable|object 上访问属性」
+        if (!$resolved[0] instanceof ParameterizedMiddleware) {
+            $this->fail('应解析成 ParameterizedMiddleware 实例');
+        }
+
         $this->assertSame(['300', '60'], $resolved[0]->parameters);
     }
 

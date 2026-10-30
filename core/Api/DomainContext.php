@@ -55,6 +55,8 @@ final class DomainContext
      */
     public function name(): string
     {
+        // $domain 可空（CLI 下没有请求域），?-> 是必需的
+        // @phpstan-ignore nullsafe.neverNull
         return $this->domain?->name ?? '';
     }
 

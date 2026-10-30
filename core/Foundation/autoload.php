@@ -50,7 +50,10 @@ final class Autoloader
      */
     public function register(bool $prepend = false): void
     {
-        spl_autoload_register([$this, 'load'], true, $prepend);
+        // load() 返回 bool 用于内部判断，注册为自动加载器时必须丢弃返回值
+        spl_autoload_register(function (string $class): void {
+            $this->load($class);
+        }, true, $prepend);
     }
 
     /**

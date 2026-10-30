@@ -203,6 +203,8 @@ PHP);
     {
         Application::boot($this->project);
 
+        // 负向测试：故意调用未定义方法，验证 Facade 会抛 BadMethodCallException
+        // @phpstan-ignore staticMethod.notFound
         $e = $this->assertThrows(BadMethodCallException::class, static fn () => Route::noSuchMethod());
 
         $this->assertStringContains('不支持 noSuchMethod()', $e->getMessage());

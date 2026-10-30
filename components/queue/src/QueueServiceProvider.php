@@ -27,7 +27,7 @@ final class QueueServiceProvider extends ServiceProvider
             $connections = $container->get(ConnectionManager::class);
 
             // 同步驱动的执行器：与 Worker 保持同一套恢复逻辑
-            $runner = static function (array $payload) use ($container): void {
+            $runner = static function (array $payload): void {
                 $class = (string) ($payload['class'] ?? '');
 
                 if (!class_exists($class)) {

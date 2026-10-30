@@ -59,7 +59,8 @@ final class LogManager
      */
     public function channel(?string $name = null): Logger
     {
-        $name ??= (string) ($this->config['default'] ?? 'daily');
+        // $this->config 由构造函数构建成固定结构，'default' 必然存在
+        $name ??= (string) $this->config['default'];
 
         if (isset($this->channels[$name])) {
             return $this->channels[$name];
@@ -163,7 +164,8 @@ final class LogManager
             throw new LogException(sprintf('未找到日志通道配置 [%s]', $name));
         }
 
-        $level = Level::fromString((string) ($config['level'] ?? $this->config['level'] ?? 'debug'));
+        // 通道配置优先，其次全局；$this->config['level'] 必然存在
+        $level = Level::fromString((string) ($config['level'] ?? $this->config['level']));
         $formatter = $this->formatter((string) ($config['formatter'] ?? 'json'));
 
         return match ((string) ($config['driver'] ?? 'single')) {

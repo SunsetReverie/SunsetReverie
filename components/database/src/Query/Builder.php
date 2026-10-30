@@ -367,7 +367,7 @@ final class Builder
      *
      * 生成 `status = ? AND (title LIKE ? OR content LIKE ?)`。
      *
-     * @param Closure(self): void $callback 分组内的条件
+     * @param Closure(self): mixed $callback 分组内的条件（返回值被忽略）
      * @return self 当前构造器
      */
     public function whereGroup(Closure $callback): self
@@ -378,7 +378,7 @@ final class Builder
     /**
      * 或条件分组（加括号，用 OR 连接）。
      *
-     * @param Closure(self): void $callback 分组内的条件
+     * @param Closure(self): mixed $callback 分组内的条件（返回值被忽略）
      * @return self 当前构造器
      */
     public function orWhereGroup(Closure $callback): self
@@ -389,7 +389,7 @@ final class Builder
     /**
      * 构造一个嵌套条件分组。
      *
-     * @param Closure(self): void $callback 分组内的条件
+     * @param Closure(self): mixed $callback 分组内的条件（返回值被忽略）
      * @param string $boolean and / or
      * @return self 当前构造器
      */
@@ -415,7 +415,7 @@ final class Builder
      * 条件成立时才应用额外约束。
      *
      * @param bool $condition 条件
-     * @param Closure(self): void $callback 约束回调
+     * @param Closure(self): mixed $callback 约束回调（返回值被忽略）
      * @return self 当前构造器
      */
     public function when(bool $condition, Closure $callback): self
@@ -767,7 +767,7 @@ final class Builder
      *
      * @param array<string, mixed> $data 字段 => 值
      * @param string $primaryKey 主键字段（PostgreSQL 使用 RETURNING）
-     * @return string 主键值
+     * @return int 主键值（自增 ID 一定是整数）
      * @throws QueryException 执行失败时抛出
      */
     public function insertGetId(array $data, string $primaryKey = 'id'): int

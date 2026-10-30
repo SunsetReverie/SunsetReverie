@@ -16,6 +16,7 @@ use SunsetReverie\Support\Facade;
  * @method static \SunsetReverie\Cache\CacheStoreInterface store(?string $name = null)
  * @method static mixed get(string $key, mixed $default = null)
  * @method static bool put(string $key, mixed $value, ?int $ttl = null)
+ * @method static bool has(string $key)
  * @method static bool forget(string $key)
  * @method static bool flush()
  * @method static mixed remember(string $key, ?int $ttl, \Closure $callback)

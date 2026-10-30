@@ -168,12 +168,33 @@ abstract class TestCase
     }
 
     /**
+     * 主动让测试失败。
+     *
+     * 返回类型用 `never`：这样 `if (!$x instanceof Y) { $this->fail(...); }`
+     * 之后静态分析才知道分支已终止，能继续收窄 $x 的类型。
+     * 用 assertTrue 就没有这个效果。
+     *
+     * @param string $message 失败提示
+     * @return never
+     * @throws AssertionFailedException 总是抛出
+     */
+    protected function fail(string $message = '测试失败'): never
+    {
+        throw new AssertionFailedException($message);
+    }
+
+    /**
      * 断言抛出指定异常。
      *
-     * @param class-string<Throwable> $expected 期望异常类
+     * 用 `@template` 让调用方拿到**具体异常类型**而不是 Throwable：
+     * 测试里经常要读 `$e->status` / `$e->errorCode` 这些子类才有的属性，
+     * 返回 Throwable 时静态分析会全部报错。
+     *
+     * @template T of Throwable
+     * @param class-string<T> $expected 期望异常类
      * @param callable $callback 待执行闭包
      * @param string $message 失败提示
-     * @return Throwable 捕获到的异常
+     * @return T 捕获到的异常
      */
     protected function assertThrows(string $expected, callable $callback, string $message = ''): Throwable
     {

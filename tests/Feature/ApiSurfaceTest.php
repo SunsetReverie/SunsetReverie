@@ -365,6 +365,7 @@ final class DeniedRequest extends FormRequest
     {
         return false;
     }
+
 }
 
 /**
@@ -384,20 +385,7 @@ final class MarkerMiddleware implements MiddlewareInterface, \SunsetReverie\Http
 
     public function handle(Request $request, Closure $next): Response
     {
-        return $next($request)->withHeader('X-Marker', 'marker:' === '' ? '' : $this->marker);
+        return $next($request)->withHeader('X-Marker', $this->marker);
     }
 
-    /**
-     * AuthManager::user()：无登录态时返回 null，不抛异常。
-     *
-     * @return void
-     */
-    public function testAuthUserWithoutLogin(): void
-    {
-        $app = Application::boot($this->project);
-
-        $this->assertNull($app->auth()->user(), '无请求上下文应安全返回 null');
-        $this->assertFalse($app->auth()->check());
-        $this->assertNull($app->auth()->id());
-    }
 }

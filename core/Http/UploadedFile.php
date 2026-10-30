@@ -194,6 +194,7 @@ final class UploadedFile
 
         $info = @getimagesize($this->tmpPath);
 
-        return is_array($info) && ($info[0] ?? 0) > 0 && ($info[1] ?? 0) > 0;
+        // getimagesize 成功时返回固定结构，[0]/[1] 一定存在
+        return is_array($info) && $info[0] > 0 && $info[1] > 0;
     }
 }

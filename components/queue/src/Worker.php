@@ -32,6 +32,39 @@ final class Worker
     }
 
     /**
+     * 常驻消费（直到中断或达到 maxJobs）。
+     *
+     * 用 Generator 而不是内部打印：Worker 负责"节奏"（空队列休眠多久），
+     * 输出形态交给调用方。之前的实现把 sleep(1) 硬编码在命令层，
+     * 导致构造函数里的 $sleepSeconds 完全没生效——传了也没用。
+     *
+     * @param int $maxJobs 最多处理多少个任务（0 表示不限）
+     * @return \Generator<int, string> 每处理完一个任务产出一条描述
+     */
+    public function work(int $maxJobs = 0): \Generator
+    {
+        $handled = 0;
+
+        while (true) {
+            $result = $this->processOne();
+
+            if ($result === null) {
+                sleep(max(1, $this->sleepSeconds));
+
+                continue;
+            }
+
+            yield $result;
+
+            $handled++;
+
+            if ($maxJobs > 0 && $handled >= $maxJobs) {
+                return;
+            }
+        }
+    }
+
+    /**
      * 处理一个任务。
      *
      * @return string|null 结果描述（无任务时 null）

@@ -427,7 +427,11 @@ final class Builder
      */
     public function sum(string $column): int|float
     {
-        return $this->aggregate('SUM', $column) ?? 0;
+        $value = $this->aggregate('SUM', $column);
+
+        // PDO 对 SUM/AVG 一律返回字符串（即使列是整数），必须显式转换，
+        // 否则声明 int|float 的方法会抛 TypeError
+        return $value === null ? 0 : $value + 0;
     }
 
     /**

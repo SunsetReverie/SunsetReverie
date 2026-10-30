@@ -36,4 +36,13 @@ return [
 
     // 私有文件签名 URL 的密钥；为空时签名功能不可用
     'sign_secret' => env('UPLOAD_SIGN_SECRET', ''),
+
+    // 分片上传（见 7.10.4）
+    'chunk' => [
+        'chunk_size' => (int) env('UPLOAD_CHUNK_SIZE', 5 * 1024 * 1024),
+        'min_chunk_size' => 1024 * 1024,
+        'max_chunk_size' => 16 * 1024 * 1024,
+        // 未完成会话的保留时长（秒）
+        'ttl' => 86400,
+    ],
 ];

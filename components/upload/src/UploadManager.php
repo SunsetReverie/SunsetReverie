@@ -67,6 +67,12 @@ final class UploadManager
     public function store(UploadedFile $file, string $directory = ''): StoredFile
     {
         $mime = $this->validate($file);
+
+        // 必须在落盘前取值：storage->put 会移走临时文件，之后无法再计算摘要
+        $hash = $file->hash();
+        $size = $file->size();
+        $originalName = $file->originalName();
+
         $relative = $this->buildPath($directory, $mime);
 
         $this->storage->put($relative, $file->tmpPath());
@@ -74,10 +80,10 @@ final class UploadManager
         return new StoredFile(
             path: $relative,
             url: $this->storage->url($relative),
-            size: $file->size(),
+            size: $size,
             mime: $mime,
-            hash: $file->hash(),
-            originalName: $file->originalName(),
+            hash: $hash,
+            originalName: $originalName,
         );
     }
 
@@ -133,6 +139,16 @@ final class UploadManager
     public function delete(string $path): bool
     {
         return $this->storage->delete($path);
+    }
+
+    /**
+     * 单文件大小上限（字节）。
+     *
+     * @return int 上限
+     */
+    public function maxSize(): int
+    {
+        return (int) ($this->config['max_size'] ?? 10 * 1024 * 1024);
     }
 
     /**

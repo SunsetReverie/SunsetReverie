@@ -67,6 +67,7 @@ final class UploadTest extends TestCase
         $this->assertStringContains('.png', $stored->path);
         $this->assertSame('avatar.png', $stored->originalName);
         $this->assertTrue($stored->size > 0);
+        $this->assertSame(64, strlen($stored->hash), 'hash 应在落盘前计算（64 位十六进制）');
     }
 
     /**

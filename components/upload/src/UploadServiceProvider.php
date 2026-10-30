@@ -9,6 +9,7 @@ use SunsetReverie\Config\Config;
 use SunsetReverie\Container\Container;
 use SunsetReverie\Foundation\Application;
 use SunsetReverie\Foundation\ServiceProvider;
+use SunsetReverie\Upload\Chunk\ChunkedUploadManager;
 use SunsetReverie\Upload\Exception\UploadException;
 use SunsetReverie\Upload\Storage\LocalStorage;
 use SunsetReverie\Upload\Storage\StorageInterface;
@@ -39,6 +40,27 @@ final class UploadServiceProvider extends ServiceProvider
                 $uploadConfig,
                 $this->createStorage($diskConfig, $app->basePath()),
                 $container->get(DomainContext::class),
+            );
+        });
+
+        $this->container->singleton(ChunkedUploadManager::class, function (Container $container): ChunkedUploadManager {
+            /** @var Config $config */
+            $config = $container->get(Config::class);
+            /** @var Application $app */
+            $app = $container->get(Application::class);
+            /** @var UploadManager $upload */
+            $upload = $container->get(UploadManager::class);
+
+            $chunk = (array) $config->get('upload.chunk', []);
+
+            return new ChunkedUploadManager(
+                $upload,
+                $app->basePath('storage/uploads/.chunks'),
+                $app->basePath('storage/uploads/.index'),
+                (int) ($chunk['chunk_size'] ?? 5 * 1024 * 1024),
+                (int) ($chunk['min_chunk_size'] ?? 1024 * 1024),
+                (int) ($chunk['max_chunk_size'] ?? 16 * 1024 * 1024),
+                (int) ($chunk['ttl'] ?? 86400),
             );
         });
 

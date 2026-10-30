@@ -29,6 +29,8 @@ final class ConsoleTest extends TestCase
         $this->clearEnv();
 
         $this->project = sys_get_temp_dir() . '/sr-console-' . uniqid('', true);
+        mkdir($this->project . '/config', 0755, true);
+        mkdir($this->project . '/routes', 0755, true);
         mkdir($this->project . '/storage/logs', 0755, true);
         mkdir($this->project . '/storage/cache', 0755, true);
         mkdir($this->project . '/storage/compiled', 0755, true);
@@ -271,5 +273,104 @@ final class ConsoleTest extends TestCase
         $app = Application::boot($this->project);
 
         $this->assertSame(1, $app->runConsole(['sr', 'db:seed']));
+    }
+
+    /**
+     * make:model 应生成语法正确的领域服务。
+     *
+     * @return void
+     */
+    public function testMakeModel(): void
+    {
+        $app = Application::boot($this->project);
+
+        $this->assertSame(0, $app->runConsole(['sr', 'make:model', 'Post']));
+
+        $file = $this->project . '/app/Domain/Post/PostService.php';
+        $this->assertTrue(is_file($file));
+
+        $code = (string) file_get_contents($file);
+        $this->assertStringContains('namespace App\\Domain\\Post;', $code);
+        $this->assertStringContains('class PostService', $code);
+        $this->assertStringContains("table('posts')", $code);
+
+        exec(escapeshellarg(PHP_BINARY) . ' -l ' . escapeshellarg($file) . ' 2>&1', $out, $status);
+        $this->assertSame(0, $status, '生成的领域服务应有合法语法');
+    }
+
+    /**
+     * make:middleware 应生成实现 MiddlewareInterface 的类。
+     *
+     * @return void
+     */
+    public function testMakeMiddleware(): void
+    {
+        $app = Application::boot($this->project);
+
+        $this->assertSame(0, $app->runConsole(['sr', 'make:middleware', 'EnsureOwner']));
+
+        $file = $this->project . '/app/Http/Middleware/EnsureOwner.php';
+        $this->assertTrue(is_file($file));
+        $this->assertStringContains('implements MiddlewareInterface', (string) file_get_contents($file));
+    }
+
+    /**
+     * make:domain 应生成路由与控制器，并提示手动加配置。
+     *
+     * @return void
+     */
+    public function testMakeDomain(): void
+    {
+        $app = Application::boot($this->project);
+
+        $this->assertSame(0, $app->runConsole(['sr', 'make:domain', 'report']));
+
+        $this->assertTrue(is_file($this->project . '/routes/report.php'));
+        $this->assertTrue(is_file($this->project . '/app/Api/Report/Controller/HomeController.php'));
+
+        // 重复创建应被拒绝
+        $this->assertSame(1, $app->runConsole(['sr', 'make:domain', 'report']));
+
+        // 非法域名
+        $this->assertSame(2, $app->runConsole(['sr', 'make:domain', 'Bad_Name']));
+    }
+
+    /**
+     * route:mode --dry-run 不应改写文件。
+     *
+     * @return void
+     */
+    public function testRouteModeDryRun(): void
+    {
+        file_put_contents(
+            $this->project . '/config/api.php',
+            "<?php\n\nreturn ['default' => 'web', 'routing_mode' => 'single', 'domains' => []];\n"
+        );
+
+        $app = Application::boot($this->project);
+
+        $this->assertSame(0, $app->runConsole(['sr', 'route:mode', 'directory', '--dry-run']));
+
+        $content = (string) file_get_contents($this->project . '/config/api.php');
+        $this->assertStringContains("'routing_mode' => 'single'", $content, 'dry-run 不应写入');
+
+        // 实际切换
+        $this->assertSame(0, $app->runConsole(['sr', 'route:mode', 'directory']));
+        $this->assertStringContains("'routing_mode' => 'directory'", (string) file_get_contents($this->project . '/config/api.php'));
+
+        // 非法模式
+        $this->assertSame(2, $app->runConsole(['sr', 'route:mode', 'wrong']));
+    }
+
+    /**
+     * migrate:fresh 未加 --force 时应拒绝执行。
+     *
+     * @return void
+     */
+    public function testMigrateFreshRequiresForce(): void
+    {
+        $app = Application::boot($this->project);
+
+        $this->assertSame(2, $app->runConsole(['sr', 'migrate:fresh']));
     }
 }

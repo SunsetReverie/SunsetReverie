@@ -50,8 +50,12 @@ final class ConsoleKernel
             'migrate' => $this->migrate(),
             'migrate:rollback' => $this->migrateRollback($args),
             'migrate:status' => $this->migrateStatus(),
+            'migrate:fresh' => $this->migrateFresh($args),
+            'db:show' => $this->dbShow($args),
+            'route:mode' => $this->routeMode($args),
             'make:migration' => $this->makeMigration($args),
-            'make:controller' => $this->makeController($args),
+            'make:controller', 'make:model', 'make:middleware', 'make:request',
+            'make:seeder', 'make:domain' => $this->make($command, $args),
             'jwt:secret' => $this->jwtSecret($args),
             'cache:clear' => $this->cacheClear(),
             'domain:list' => $this->domainList($args),
@@ -617,6 +621,18 @@ PHP;
     // ── lint ──────────────────────────────────────────────────────────
 
     /**
+     * make:* 生成命令（委托给 MakeCommands）。
+     *
+     * @param string $command 命令名
+     * @param list<string> $args 参数
+     * @return int 退出码
+     */
+    private function make(string $command, array $args): int
+    {
+        return (new MakeCommands($this->app))->run(substr($command, 5), $args);
+    }
+
+    /**
      * lint:architecture：架构检查。
      *
      * @param list<string> $args 参数（--json 机器可读）
@@ -668,78 +684,6 @@ PHP;
         $this->line($failed === 0 ? '全部通过' : sprintf('%d 项未通过', $failed));
 
         return $failed === 0 ? 0 : 1;
-    }
-
-    /**
-     * make:controller：生成域控制器。
-     *
-     * 用法：sr make:controller Admin/PostController
-     *
-     * @param list<string> $args 参数（Domain/Name）
-     * @return int 退出码
-     */
-    private function makeController(array $args): int
-    {
-        $name = $this->firstArgument($args);
-
-        if ($name === null) {
-            $this->error('用法：sr make:controller Admin/PostController');
-
-            return 2;
-        }
-
-        $segments = array_values(array_filter(explode('/', str_replace('\\', '/', $name))));
-
-        if (count($segments) !== 2) {
-            $this->error('控制器名应形如 {域}/{名称}，例如 Admin/PostController');
-
-            return 2;
-        }
-
-        [$domain, $class] = $segments;
-        $domain = ucfirst($domain);
-        $class = ucfirst($class);
-
-        if (preg_match('/^[A-Za-z][A-Za-z0-9]*$/', $domain) !== 1 || preg_match('/^[A-Za-z][A-Za-z0-9]*$/', $class) !== 1) {
-            $this->error('域与控制器名只能包含字母数字，且以字母开头');
-
-            return 2;
-        }
-
-        $directory = $this->app->basePath('app/Api/' . $domain . '/Controller');
-        $file = $directory . '/' . $class . '.php';
-
-        if (is_file($file)) {
-            $this->error('控制器已存在：' . $file);
-
-            return 1;
-        }
-
-        if (!is_dir($directory) && !@mkdir($directory, 0755, true) && !is_dir($directory)) {
-            $this->error('无法创建目录：' . $directory);
-
-            return 1;
-        }
-
-        $code = "<?php\n\ndeclare(strict_types=1);\n\n"
-            . "namespace App\\Api\\{$domain}\\Controller;\n\n"
-            . "use SunsetReverie\\Http\\Request;\n\n"
-            . "/**\n * {$domain} 域 {$class}。\n */\n"
-            . "final class {$class}\n{\n"
-            . "    /**\n     * 列表。\n     *\n     * @param Request \$request 当前请求\n     * @return array<string, mixed> 响应数据\n     */\n"
-            . "    public function index(Request \$request): array\n    {\n        return ['items' => []];\n    }\n\n"
-            . "    /**\n     * 详情。\n     *\n     * @param int \$id 主键\n     * @return array<string, mixed> 响应数据\n     */\n"
-            . "    public function show(int \$id): array\n    {\n        return ['id' => \$id];\n    }\n\n"
-            . "    /**\n     * 创建。\n     *\n     * @param Request \$request 当前请求\n     * @return array<string, mixed> 响应数据\n     */\n"
-            . "    public function store(Request \$request): array\n    {\n        return ['created' => true];\n    }\n}\n";
-
-        file_put_contents($file, $code);
-        @chmod($file, 0644);
-
-        $this->line('已生成：' . $file);
-        $this->line('提示：记得在 routes/' . strtolower($domain) . '.php 中注册路由');
-
-        return 0;
     }
 
     /**
@@ -1292,6 +1236,166 @@ PHP;
     }
 
     /**
+     * migrate:fresh：回滚全部批次后重新迁移（危险操作）。
+     *
+     * @param list<string> $args 参数（--force）
+     * @return int 退出码
+     */
+    private function migrateFresh(array $args): int
+    {
+        if (!in_array('--force', $args, true)) {
+            $this->error('migrate:fresh 会回滚全部迁移（数据会丢失），确认请加 --force');
+
+            return 2;
+        }
+
+        try {
+            $migrator = $this->migrator();
+            $status = $migrator->status();
+            $batches = $status['executed'] === [] ? 0 : count(array_unique(array_values($status['executed'])));
+
+            if ($batches > 0) {
+                $rolled = $migrator->rollback($batches);
+                $this->line(sprintf('已回滚 %d 个迁移', count($rolled)));
+            }
+
+            $files = $migrator->migrate();
+        } catch (\Throwable $e) {
+            $this->error('重建失败：' . $e->getMessage());
+
+            return 1;
+        }
+
+        foreach ($files as $file) {
+            $this->line('  ✓ ' . $file);
+        }
+
+        $this->line(sprintf('重建完成：%d 个迁移', count($files)));
+
+        return 0;
+    }
+
+    /**
+     * db:show：连接信息与表概览。
+     *
+     * @param list<string> $args 参数
+     * @return int 退出码
+     */
+    private function dbShow(array $args): int
+    {
+        try {
+            $db = $this->app->db();
+            $driver = $db->driver();
+
+            $this->line('数据库连接');
+            $this->line('  驱动      : ' . $driver);
+            $this->line('  当前库    : ' . (string) ($db->scalar($driver === 'sqlite' ? 'PRAGMA database_list' : 'SELECT DATABASE()') ?: '-'));
+
+            $tables = $driver === 'sqlite'
+                ? $db->select("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+                : $db->select('SHOW TABLES');
+
+            $names = [];
+
+            foreach ($tables as $row) {
+                $names[] = (string) array_values($row)[0];
+            }
+        } catch (\Throwable $e) {
+            $this->error('读取数据库信息失败：' . $e->getMessage());
+
+            return 1;
+        }
+
+        $this->line('');
+        $this->line(sprintf('共 %d 张表', count($names)));
+
+        foreach ($names as $name) {
+            try {
+                $count = $this->app->db()->table($name)->count();
+                $this->line(sprintf('  %-24s %d 行', $name, $count));
+            } catch (\Throwable) {
+                $this->line(sprintf('  %-24s ?', $name));
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * route:mode：切换路由组织模式。
+     *
+     * @param list<string> $args 参数（single|directory，--dry-run）
+     * @return int 退出码
+     */
+    private function routeMode(array $args): int
+    {
+        $mode = $this->firstArgument($args);
+        $dryRun = in_array('--dry-run', $args, true);
+        $file = $this->app->basePath('config/api.php');
+
+        if (!is_file($file)) {
+            $this->error('未找到 config/api.php，请先执行 sr new 或手动创建');
+
+            return 1;
+        }
+
+        if ($mode === null) {
+            $current = (string) ($this->app->config()->get('api.routing_mode') ?? 'single');
+            $this->line('当前路由模式：' . $current);
+            $this->line('用法：sr route:mode single|directory [--dry-run]');
+
+            return 2;
+        }
+
+        if (!in_array($mode, ['single', 'directory'], true)) {
+            $this->error('模式只能是 single 或 directory');
+
+            return 2;
+        }
+
+        $content = (string) file_get_contents($file);
+
+        if (preg_match("/'routing_mode'\s*=>\s*'([a-z]+)'/", $content, $matches) !== 1) {
+            $this->error('config/api.php 中未找到 routing_mode 配置项');
+
+            return 1;
+        }
+
+        if ($matches[1] === $mode) {
+            $this->line('当前已是 ' . $mode . ' 模式，无需修改');
+
+            return 0;
+        }
+
+        if ($dryRun) {
+            $this->line(sprintf('将把 routing_mode 从 %s 改为 %s（--dry-run，未写入）', $matches[1], $mode));
+
+            return 0;
+        }
+
+        $updated = (string) preg_replace(
+            "/'routing_mode'\s*=>\s*'[a-z]+'/",
+            "'routing_mode' => '" . $mode . "'",
+            $content,
+            1
+        );
+
+        if (file_put_contents($file, $updated) === false) {
+            $this->error('写入失败：' . $file);
+
+            return 1;
+        }
+
+        $this->line(sprintf('路由模式已切换：%s → %s', $matches[1], $mode));
+
+        if ($mode === 'directory') {
+            $this->line('提示：每个域需要保留入口文件 routes/{domain}.php，版本分组用 group(目录) 加载');
+        }
+
+        return 0;
+    }
+
+    /**
      * make:migration 命令：生成迁移文件。
      *
      * @param list<string> $args 参数（迁移名）
@@ -1400,8 +1504,16 @@ PHP;
         $this->line('  migrate       执行未运行的迁移');
         $this->line('  migrate:rollback [--step=1]  回滚最近批次');
         $this->line('  migrate:status 查看迁移状态');
+        $this->line('  migrate:fresh 重建全部表（需 --force）');
+        $this->line('  db:show       连接信息与表概览');
+        $this->line('  route:mode    切换路由模式（single|directory，--dry-run）');
         $this->line('  make:migration {name}        生成迁移文件');
         $this->line('  make:controller {Domain/Name} 生成域控制器');
+        $this->line('  make:model {Name}            生成领域服务（app/Domain/）');
+        $this->line('  make:middleware {Name}       生成中间件');
+        $this->line('  make:request {Domain/Name}   生成请求校验类');
+        $this->line('  make:seeder {Name}           生成填充脚本（scripts/）');
+        $this->line('  make:domain {name}           生成域骨架（路由 + 控制器）');
         $this->line('  jwt:secret    生成 JWT 密钥并写入 .env（--show 只打印）');
         $this->line('  cache:clear   清空默认缓存驱动');
         $this->line('  domain:list   列出已配置的 API 域');

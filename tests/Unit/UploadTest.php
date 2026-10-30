@@ -176,8 +176,8 @@ final class UploadTest extends TestCase
         $this->assertStringContains('sign=', $url);
 
         parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
-        $expires = (int) $query['expires'];
-        $sign = (string) $query['sign'];
+        $expires = (int) ($query['expires'] ?? 0);
+        $sign = is_string($query['sign'] ?? null) ? $query['sign'] : '';
 
         $this->assertTrue($manager->verifySignature('app/2026/10/30/x.pdf', $expires, $sign));
         $this->assertFalse($manager->verifySignature('app/2026/10/30/y.pdf', $expires, $sign));

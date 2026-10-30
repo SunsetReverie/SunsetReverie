@@ -399,6 +399,10 @@ final class GdDriver implements ImageDriverInterface
      */
     private function canvas(int $width, int $height): GdImage
     {
+        // imagecreatetruecolor 要求正整数；宽高算出来可能是 0（等比缩放极小值时）
+        $width = max(1, $width);
+        $height = max(1, $height);
+
         $canvas = imagecreatetruecolor($width, $height);
 
         if ($canvas === false) {

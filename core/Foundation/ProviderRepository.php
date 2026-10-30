@@ -17,10 +17,10 @@ use SunsetReverie\Container\Container;
  */
 final class ProviderRepository
 {
-    /** @var array<class-string<ServiceProvider>, ServiceProvider> 已实例化的 Provider */
+    /** @var array<string, ServiceProvider> 已实例化的 Provider（键是类名，可能来自配置字符串） */
     private array $providers = [];
 
-    /** @var list<class-string<ServiceProvider>> 注册顺序 */
+    /** @var list<string> 注册顺序（类名，顺序即依赖顺序） */
     private array $order = [];
 
     /** @var bool 是否已完成 boot */
@@ -72,7 +72,7 @@ final class ProviderRepository
     /**
      * 获取全部 Provider 实例。
      *
-     * @return array<class-string<ServiceProvider>, ServiceProvider> Provider 映射
+     * @return array<string, ServiceProvider> Provider 映射（键为类名）
      */
     public function all(): array
     {
@@ -92,7 +92,7 @@ final class ProviderRepository
     /**
      * 实例化 Provider（幂等）。
      *
-     * @param class-string<ServiceProvider> $class Provider 类名
+     * @param string $class Provider 类名（来自配置，不保证 class-string；内部有存在性检查）
      * @return ServiceProvider Provider 实例
      * @throws \RuntimeException 类不存在或类型不符时抛出
      */
@@ -152,6 +152,7 @@ final class ProviderRepository
             }
 
             $visiting = array_values(array_diff($visiting, [$class]));
+            /** @var class-string<\SunsetReverie\Foundation\ServiceProvider> $class */
             $sorted[] = $class;
         };
 

@@ -433,7 +433,14 @@ final class Blueprint
         $index = count($this->columns) - 1;
 
         if ($index >= 0) {
-            $this->columns[$index] .= $suffix;
+            /*
+             * 不写成 `$this->columns[$index] .= $suffix`：
+             * 那种写法在静态分析看来会把 list<string> 变成
+             * 「可能稀疏的 non-empty-array」，破坏 list 语义。
+             * 弹出再追加能保持 list。
+             */
+            $last = array_pop($this->columns);
+            $this->columns[] = $last . $suffix;
         }
 
         return $this;

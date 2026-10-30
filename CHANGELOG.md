@@ -8,6 +8,49 @@
 
 - 待办见文档 18.3.0「当前验收状态」的缺口列表
 
+## [0.44.0] - 2026-10-31
+
+### 变更
+
+- PHPStan 从 level 6 升到 **level 7**，零错误（27 个问题全部修掉）
+
+### 修复（level 7 暴露的类型问题）
+
+**生产代码 14 项**
+
+- `Connection::select()` 用 `array_values()` 保证「列表」语义
+- `Connection::affect()` 的 `$bindings` 从 `list<mixed>` 放宽为 `array<int, mixed>`
+  （调用方传的是普通数组，两者在静态分析里不等价）
+- `Connection::lastInsertId()` 处理 `PDO::lastInsertId()` 返回 `false` 的情况
+- `Blueprint::modifyLast()` 避免 `$arr[$i] .= $s`——那种写法会让静态分析
+  认为 `list<string>` 变成「可能稀疏的数组」，改为弹出再追加
+- `GdDriver::canvas()` 对宽高做 `max(1, ...)`（`imagecreatetruecolor` 要求正整数，
+  等比缩放到极小值时算出来可能是 0）
+- `Container::build()` 加 `class_exists()` 检查（`ReflectionClass` 需要 `class-string`）
+- `Application::reflectMethod()` 改用 `ReflectionMethod::getClosure()`——
+  数组形式 `[$obj, $method]` 在静态分析里不满足 `callable` 约束
+- `Application` 的中间件列表加类型注解
+- `ProviderRepository` 的属性与返回类型从 `class-string<ServiceProvider>` 放宽为 `string`
+  （类名来自配置，无法在编译期保证）
+- `HandleCors` 的 `$allowedOrigins` 放宽为 `array<int, mixed>`
+- `Request::$post` 与 `bodyData()` 补齐值类型
+- `Router::groupMiddleware()` 逐项转 `string` 保证 `list<string>`
+
+**测试代码 13 项**
+
+- `ImageTest` 新增 `requireImage()`：`assertTrue($x !== false)` **不会**让静态分析
+  收窄类型，必须用 `fail()`（返回 `never`）的 if 分支
+- `ChunkedUploadTest` 的 `str_split` 长度做 `max(1, ...)`
+- `UploadTest` 的 query 值加 `is_string()` 检查
+
+### 说明
+
+level 6 → 7 的差异是「更严格的类型精度」：level 6 只看明显错误，
+level 7 会追到「声明 `list` 但可能返回稀疏数组」这种程度。
+
+**27 个问题里没有新的功能性 bug**——说明 level 6 已经覆盖了真正的运行时风险，
+level 7 主要是让类型声明更精确，减少「文档说 A、实现是 B」的偏差。
+
 ## [0.43.1] - 2026-10-30
 
 ### 修复

@@ -69,7 +69,7 @@ use SunsetReverie\Validation\Validator;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.43.1';
+    public const VERSION = '0.44.0';
 
     private static ?self $instance = null;
 
@@ -382,6 +382,7 @@ final class Application
 
         $response = null;
 
+        /** @var list<class-string<\SunsetReverie\Http\Middleware\MiddlewareInterface>|\SunsetReverie\Http\Middleware\MiddlewareInterface|\Closure> $middleware */
         try {
             $response = $this->pipeline
                 ->send($request)
@@ -907,7 +908,13 @@ final class Application
             ));
         }
 
-        return [[$instance, $method], $reflection];
+        /*
+         * 用 getClosure 而不是 [[$obj, $method]] 或 Closure::fromCallable：
+         * - 前者是数组，静态分析不认作 callable
+         * - Closure::fromCallable 要求 callable()（无参签名），而控制器方法有参数
+         * getClosure 直接返回绑定好的 Closure，类型正确且无需额外断言。
+         */
+        return [$reflection->getClosure($instance), $reflection];
     }
 
     /**

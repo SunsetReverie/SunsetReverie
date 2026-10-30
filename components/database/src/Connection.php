@@ -64,7 +64,8 @@ final class Connection
      */
     public function select(string $sql, array $bindings = []): array
     {
-        return $this->run($sql, $bindings)->fetchAll();
+        // fetchAll 的类型是 array，这里显式取 values 保证「列表」语义
+        return array_values($this->run($sql, $bindings)->fetchAll());
     }
 
     /**
@@ -122,7 +123,7 @@ final class Connection
      * 执行写语句并返回影响行数。
      *
      * @param string $sql SQL
-     * @param list<mixed> $bindings 绑定值
+     * @param array<int, mixed> $bindings 绑定值（顺序传参，键名无意义）
      * @return int 受影响行数
      * @throws QueryException 执行失败时抛出
      */
@@ -252,7 +253,11 @@ final class Connection
     public function lastInsertId(?string $sequence = null): string
     {
         try {
-            return $this->pdo->lastInsertId($sequence);
+            $id = $this->pdo->lastInsertId($sequence);
+
+            // PDO::lastInsertId() 声明为 string|false：
+            // 某些驱动在不支持该操作时返回 false（如未插入过任何行）
+            return $id === false ? '0' : $id;
         } catch (PDOException $e) {
             throw new QueryException('LAST INSERT ID', [], $e);
         }

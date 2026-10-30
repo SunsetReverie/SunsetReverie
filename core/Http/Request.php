@@ -38,6 +38,7 @@ final class Request
         public readonly string $method,
         public readonly string $path,
         private readonly array $query,
+        /** @var array<string, mixed> 表单数据 */
         private readonly array $post,
         private readonly array $files,
         private readonly string $rawBody,
@@ -251,8 +252,10 @@ final class Request
         $contentType = strtolower((string) $this->header('content-type', ''));
 
         if (str_contains($contentType, 'application/x-www-form-urlencoded')) {
+            // parse_str 产出 array<int|string, array|string>，这里按表单语义收敛
             parse_str($this->rawBody, $data);
 
+            /** @var array<string, mixed> $data */
             return $data;
         }
 

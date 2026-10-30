@@ -141,6 +141,10 @@ final class Container
             throw new CircularDependencyException([...$this->buildStack, $class]);
         }
 
+        if (!class_exists($class)) {
+            throw new ContainerException(sprintf('[%s] 不存在（检查命名空间拼写或是否已加载）', $class));
+        }
+
         $reflection = new ReflectionClass($class);
 
         if (!$reflection->isInstantiable()) {

@@ -192,9 +192,14 @@ final class ImageTest extends TestCase
             $target = $this->path("white-{$name}.jpg");
             $manager->open($source)->format('jpg')->save($target);
 
-            $decoded = imagecreatefromjpeg($target);
-            $this->assertTrue($decoded !== false, "[{$name}] 输出应可解码");
-            $rgb = imagecolorsforindex($decoded, imagecolorat($decoded, 5, 5));
+            $decoded = $this->requireImage(imagecreatefromjpeg($target), "[{$name}] 输出应可解码");
+            $pixel = imagecolorat($decoded, 5, 5);
+
+            if ($pixel === false) {
+                $this->fail("[{$name}] 无法读取像素");
+            }
+
+            $rgb = imagecolorsforindex($decoded, $pixel);
 
             $this->assertTrue(
                 $rgb['red'] > 240 && $rgb['green'] > 240 && $rgb['blue'] > 240,
@@ -362,15 +367,21 @@ final class ImageTest extends TestCase
      */
     private function makeImage(int $width, int $height, bool $alpha = false, array $color = [200, 100, 50]): string
     {
-        $image = imagecreatetruecolor($width, $height);
-        $this->assertTrue($image !== false);
+        // imagecreatetruecolor 要求正整数
+        $image = $this->requireImage(imagecreatetruecolor(max(1, $width), max(1, $height)));
 
         if ($alpha) {
             imagealphablending($image, false);
             imagesavealpha($image, true);
             imagefill($image, 0, 0, (int) imagecolorallocatealpha($image, 0, 0, 0, 127));
         } else {
-            imagefill($image, 0, 0, (int) imagecolorallocate($image, $color[0], $color[1], $color[2]));
+            // imagecolorallocate 要求 0-255
+            imagefill($image, 0, 0, (int) imagecolorallocate(
+                $image,
+                max(0, min(255, $color[0])),
+                max(0, min(255, $color[1])),
+                max(0, min(255, $color[2]))
+            ));
         }
 
         $path = $this->path('src-' . bin2hex(random_bytes(4)) . '.png');
@@ -388,8 +399,7 @@ final class ImageTest extends TestCase
      */
     private function makeNoiseImage(int $width, int $height): string
     {
-        $image = imagecreatetruecolor($width, $height);
-        $this->assertTrue($image !== false);
+        $image = $this->requireImage(imagecreatetruecolor(max(1, $width), max(1, $height)));
 
         for ($x = 0; $x < $width; $x += 2) {
             for ($y = 0; $y < $height; $y += 2) {
@@ -418,6 +428,29 @@ final class ImageTest extends TestCase
     }
 
     /**
+     * 断言 GD 函数返回了图像，并返回**已收窄**的类型。
+     *
+     * 为什么不用 `assertTrue($x !== false)`：运行时没问题，
+     * 但静态分析不会因此收窄类型，后续每个 GD 调用都会报
+     * 「期望 GdImage，实际 GdImage|false」。
+     *
+     * `fail()` 返回 never，所以这个 if 分支能让 PHPStan 确信
+     * 之后的 $image 一定是 GdImage。
+     *
+     * @param mixed $image GD 函数返回值
+     * @param string $message 失败提示
+     * @return \GdImage 图像资源
+     */
+    private function requireImage(mixed $image, string $message = 'GD 图像创建失败'): \GdImage
+    {
+        if (!$image instanceof \GdImage) {
+            $this->fail($message);
+        }
+
+        return $image;
+    }
+
+    /**
      * 临时文件路径。
      *
      * @param string $name 文件名
@@ -441,8 +474,7 @@ final class ImageTest extends TestCase
     {
         // EXIF 只能注入 JPEG，先把测试图转成 jpg
         $base = $this->path('exif-base.jpg');
-        $decoded = imagecreatefrompng($this->makeImage(400, 300));
-        $this->assertTrue($decoded !== false);
+        $decoded = $this->requireImage(imagecreatefrompng($this->makeImage(400, 300)));
         imagejpeg($decoded, $base, 92);
 
         foreach ($this->managers() as $name => $manager) {

@@ -67,7 +67,7 @@ final class HandleCors implements MiddlewareInterface
      * 判断 Origin 是否在允许列表内。
      *
      * @param string $origin 请求来源
-     * @param list<string> $allowedOrigins 允许列表
+     * @param array<int, mixed> $allowedOrigins 允许列表（来自配置，内部逐项转字符串比较）
      * @return bool 允许返回 true
      */
     private function isAllowedOrigin(string $origin, array $allowedOrigins): bool

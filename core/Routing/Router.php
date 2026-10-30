@@ -407,7 +407,11 @@ final class Router
         $middleware = [];
 
         foreach ($this->groupStack as $attributes) {
-            $middleware = [...$middleware, ...(array) ($attributes['middleware'] ?? [])];
+            // 逐项转 string 并逐个追加：用 [...$a, ...$b] 会让静态分析
+            // 得到 array<mixed>，而调用方需要 list<string>
+            foreach ((array) ($attributes['middleware'] ?? []) as $item) {
+                $middleware[] = (string) $item;
+            }
         }
 
         return $middleware;

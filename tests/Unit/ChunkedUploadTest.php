@@ -236,7 +236,8 @@ final class ChunkedUploadTest extends TestCase
      */
     private function split(int $size): array
     {
-        return str_split($this->payload, $size);
+        // str_split 要求长度 ≥ 1
+        return str_split($this->payload, max(1, $size));
     }
 
     /**

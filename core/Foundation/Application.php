@@ -41,6 +41,8 @@ use SunsetReverie\Log\LogManager;
 use SunsetReverie\Log\Middleware\LogRequest;
 use SunsetReverie\Log\LogServiceProvider;
 use SunsetReverie\Http\Response;
+use SunsetReverie\Image\ImageManager;
+use SunsetReverie\Image\ImageServiceProvider;
 use SunsetReverie\Mail\MailManager;
 use SunsetReverie\Mail\MailServiceProvider;
 use SunsetReverie\Queue\QueueManager;
@@ -67,7 +69,7 @@ use SunsetReverie\Validation\Validator;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.33.1';
+    public const VERSION = '0.34.0';
 
     private static ?self $instance = null;
 
@@ -216,6 +218,16 @@ final class Application
     public function domain(): DomainContext
     {
         return $this->domainContext;
+    }
+
+    /**
+     * 获取图片管理器。
+     *
+     * @return ImageManager 图片管理器
+     */
+    public function image(): ImageManager
+    {
+        return $this->container->get(ImageManager::class);
     }
 
     /**
@@ -507,6 +519,7 @@ final class Application
             UploadServiceProvider::class,
             QueueServiceProvider::class,
             MailServiceProvider::class,
+            ImageServiceProvider::class,
         ];
 
         $configured = $this->config->get('app.providers');

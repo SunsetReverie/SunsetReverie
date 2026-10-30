@@ -118,6 +118,7 @@ $sunsetComponents = [
     'RateLimit' => 'ratelimit',
     'Queue' => 'queue',
     'Mail' => 'mail',
+    'Image' => 'image',
 ];
 
 foreach ($sunsetComponents as $namespace => $directory) {

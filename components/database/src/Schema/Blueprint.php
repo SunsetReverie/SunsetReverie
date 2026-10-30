@@ -100,6 +100,28 @@ final class Blueprint
     }
 
     /**
+     * JSON 列。
+     *
+     * 三种数据库的对应类型不同：
+     * - MySQL：`JSON`（5.7+，有原生校验）
+     * - PostgreSQL：`JSONB`（二进制存储，可建索引、查询更快）
+     * - SQLite：`TEXT`（无原生类型，靠 JSON1 扩展的函数读写）
+     *
+     * 语义上"存一段结构化数据"，不保证跨库的查询能力一致——
+     * 需要按 JSON 内部字段过滤时，MySQL/PG 能用 `->>`，SQLite 要 `json_extract`，
+     * 这类查询建议放原生 SQL 而不是硬塞进 DSL。
+     *
+     * 默认 NULL：MySQL 的 JSON 列不允许非 NULL 字面量默认值。
+     *
+     * @param string $name 列名
+     * @return self 当前实例
+     */
+    public function json(string $name): self
+    {
+        return $this->addColumn($name, '__JSON__');
+    }
+
+    /**
      * 时间戳列。
      *
      * @param string $name 列名
@@ -311,9 +333,21 @@ final class Blueprint
             $column = str_replace('__UNIQUE__', '', $column);
 
             $column = match ($driver) {
-                'pgsql' => str_replace(['__BOOL__', '__TIMESTAMP__'], ['BOOLEAN', 'TIMESTAMP'], $column),
-                'sqlite' => str_replace(['__BOOL__', '__TIMESTAMP__'], ['INTEGER', 'DATETIME'], $column),
-                default => str_replace(['__BOOL__', '__TIMESTAMP__'], ['TINYINT(1)', 'DATETIME'], $column),
+                'pgsql' => str_replace(
+                    ['__BOOL__', '__TIMESTAMP__', '__JSON__'],
+                    ['BOOLEAN', 'TIMESTAMP', 'JSONB'],
+                    $column
+                ),
+                'sqlite' => str_replace(
+                    ['__BOOL__', '__TIMESTAMP__', '__JSON__'],
+                    ['INTEGER', 'DATETIME', 'TEXT'],
+                    $column
+                ),
+                default => str_replace(
+                    ['__BOOL__', '__TIMESTAMP__', '__JSON__'],
+                    ['TINYINT(1)', 'DATETIME', 'JSON'],
+                    $column
+                ),
             };
 
             if (!$isNullable) {

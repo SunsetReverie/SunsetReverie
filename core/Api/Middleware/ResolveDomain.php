@@ -39,6 +39,13 @@ final class ResolveDomain implements MiddlewareInterface
      */
     public function handle(Request $request, Closure $next): Response
     {
+        // 单域项目（未配置 api.domains）：不做任何域隔离，避免默认域误伤
+        if (!$this->resolver->hasDomains()) {
+            return $next($request
+                ->withAttribute(self::ATTRIBUTE, '')
+                ->withAttribute(self::PREFIX_ATTRIBUTE, ''));
+        }
+
         $domain = $this->resolver->resolve($request);
         $this->context->set($domain);
 

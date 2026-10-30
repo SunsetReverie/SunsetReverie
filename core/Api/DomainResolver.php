@@ -31,6 +31,16 @@ final class DomainResolver
     }
 
     /**
+     * 是否配置了任何域（false 表示单域项目，不做域隔离）。
+     *
+     * @return bool 有域配置返回 true
+     */
+    public function hasDomains(): bool
+    {
+        return !$this->registry->isEmpty();
+    }
+
+    /**
      * 解析请求所属的域。
      *
      * @param Request $request 当前请求

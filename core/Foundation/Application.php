@@ -13,6 +13,7 @@ use SunsetReverie\Config\EnvLoader;
 use SunsetReverie\Auth\AuthManager;
 use SunsetReverie\RateLimit\Middleware\ThrottleRequests;
 use SunsetReverie\Auth\Middleware\Authenticate;
+use SunsetReverie\Auth\Middleware\OptionalAuth;
 use SunsetReverie\Auth\AuthServiceProvider;
 use SunsetReverie\Api\DomainContext;
 use SunsetReverie\Api\DomainRegistry;
@@ -62,7 +63,7 @@ use SunsetReverie\Validation\Validator;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.27.0';
+    public const VERSION = '0.28.0';
 
     private static ?self $instance = null;
 
@@ -593,6 +594,7 @@ final class Application
     {
         $defaults = [
             'auth' => Authenticate::class,
+            'auth.optional' => OptionalAuth::class,
             'throttle' => ThrottleRequests::class,
             'cors' => HandleCors::class,
             'log' => LogRequest::class,

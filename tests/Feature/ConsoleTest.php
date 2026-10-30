@@ -188,4 +188,88 @@ final class ConsoleTest extends TestCase
 
         $this->assertSame(2, $app->runConsole(['sr', 'no-such-command']));
     }
+
+    /**
+     * make:controller 应生成语法正确的控制器，重复时拒绝。
+     *
+     * @return void
+     */
+    public function testMakeController(): void
+    {
+        $app = Application::boot($this->project);
+
+        $this->assertSame(0, $app->runConsole(['sr', 'make:controller', 'Admin/PostController']));
+
+        $file = $this->project . '/app/Api/Admin/Controller/PostController.php';
+        $this->assertTrue(is_file($file));
+
+        $code = (string) file_get_contents($file);
+        $this->assertStringContains('namespace App\\Api\\Admin\\Controller;', $code);
+        $this->assertStringContains('final class PostController', $code);
+
+        // 生成物必须是合法 PHP
+        exec(escapeshellarg(PHP_BINARY) . ' -l ' . escapeshellarg($file) . ' 2>&1', $output, $status);
+        $this->assertSame(0, $status, '生成的控制器应有合法语法');
+
+        // 重复生成应被拒绝
+        $this->assertSame(1, $app->runConsole(['sr', 'make:controller', 'Admin/PostController']));
+    }
+
+    /**
+     * make:controller 参数不合法时返回用法错误。
+     *
+     * @return void
+     */
+    public function testMakeControllerRejectsBadName(): void
+    {
+        $app = Application::boot($this->project);
+
+        $this->assertSame(2, $app->runConsole(['sr', 'make:controller']));
+        $this->assertSame(2, $app->runConsole(['sr', 'make:controller', 'JustName']));
+        $this->assertSame(2, $app->runConsole(['sr', 'make:controller', 'Admin/9Bad']));
+    }
+
+    /**
+     * jwt:secret 应写入 64 位十六进制密钥。
+     *
+     * @return void
+     */
+    public function testJwtSecret(): void
+    {
+        $app = Application::boot($this->project);
+
+        // 没有 .env 时应明确失败，而不是静默写到一个不存在的位置
+        $this->assertSame(1, $app->runConsole(['sr', 'jwt:secret']), '缺少 .env 应返回 1');
+
+        file_put_contents($this->project . '/.env', "APP_KEY=\n");
+
+        $this->assertSame(0, $app->runConsole(['sr', 'jwt:secret']));
+
+        $content = (string) file_get_contents($this->project . '/.env');
+        $this->assertSame(1, preg_match('/^JWT_SECRET=[0-9a-f]{64}$/m', $content), '.env 应含 64 位 JWT 密钥');
+    }
+
+    /**
+     * 未配置域时 domain:list 应说明是单域模式。
+     *
+     * @return void
+     */
+    public function testDomainListWithoutDomains(): void
+    {
+        $app = Application::boot($this->project);
+
+        $this->assertSame(0, $app->runConsole(['sr', 'domain:list']));
+    }
+
+    /**
+     * db:seed 找不到脚本时应失败。
+     *
+     * @return void
+     */
+    public function testDbSeedMissingScript(): void
+    {
+        $app = Application::boot($this->project);
+
+        $this->assertSame(1, $app->runConsole(['sr', 'db:seed']));
+    }
 }

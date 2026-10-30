@@ -18,6 +18,12 @@ use SunsetReverie\Cache\Exception\CacheException;
  */
 final class CacheManager
 {
+    /** 内置默认驱动（无 config/cache.php 时也能工作） */
+    private const DEFAULT_STORES = [
+        'array' => ['driver' => 'array'],
+        'file' => ['driver' => 'file', 'path' => 'storage/cache'],
+    ];
+
     /** @var array<string, CacheStoreInterface> 已创建的驱动实例 */
     private array $stores = [];
 
@@ -32,16 +38,21 @@ final class CacheManager
     /** @var array<string, Closure(array<string, mixed>): CacheStoreInterface> 自定义驱动工厂 */
     private array $extensions = [];
 
+    /** @var array<string, mixed> 缓存配置（已合并内置默认驱动） */
+    private array $config;
+
     /**
      * @param array<string, mixed> $config 缓存配置（default + prefix + stores）
      * @param string $basePath 项目根目录（文件缓存路径解析用）
      * @param DomainContext|null $domainContext 域上下文（配置了域时自动加前缀隔离）
      */
     public function __construct(
-        private readonly array $config,
+        array $config,
         private readonly string $basePath = '',
         private readonly ?DomainContext $domainContext = null,
     ) {
+        $this->config = $config + ['stores' => []];
+        $this->config['stores'] = array_merge(self::DEFAULT_STORES, (array) ($config['stores'] ?? []));
     }
 
     /**

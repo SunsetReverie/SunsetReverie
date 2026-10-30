@@ -44,12 +44,19 @@ final class ConsoleKernel
             'key:generate' => $this->keyGenerate($args),
             'env:check' => $this->envCheck(),
             'lint:architecture' => $this->lintArchitecture($args),
+            'lint:isolation' => $this->lintIsolation($args),
             'optimize' => $this->optimize(),
             'optimize:clear' => $this->optimizeClear(),
             'migrate' => $this->migrate(),
             'migrate:rollback' => $this->migrateRollback($args),
             'migrate:status' => $this->migrateStatus(),
             'make:migration' => $this->makeMigration($args),
+            'make:controller' => $this->makeController($args),
+            'jwt:secret' => $this->jwtSecret($args),
+            'cache:clear' => $this->cacheClear(),
+            'domain:list' => $this->domainList($args),
+            'db:seed' => $this->dbSeed($args),
+            'upload:prune' => $this->uploadPrune($args),
             'about' => $this->about(),
             'help', '--help', '-h' => $this->help(),
             '--version', '-V' => $this->version(),
@@ -663,6 +670,301 @@ PHP;
         return $failed === 0 ? 0 : 1;
     }
 
+    /**
+     * make:controller：生成域控制器。
+     *
+     * 用法：sr make:controller Admin/PostController
+     *
+     * @param list<string> $args 参数（Domain/Name）
+     * @return int 退出码
+     */
+    private function makeController(array $args): int
+    {
+        $name = $this->firstArgument($args);
+
+        if ($name === null) {
+            $this->error('用法：sr make:controller Admin/PostController');
+
+            return 2;
+        }
+
+        $segments = array_values(array_filter(explode('/', str_replace('\\', '/', $name))));
+
+        if (count($segments) !== 2) {
+            $this->error('控制器名应形如 {域}/{名称}，例如 Admin/PostController');
+
+            return 2;
+        }
+
+        [$domain, $class] = $segments;
+        $domain = ucfirst($domain);
+        $class = ucfirst($class);
+
+        if (preg_match('/^[A-Za-z][A-Za-z0-9]*$/', $domain) !== 1 || preg_match('/^[A-Za-z][A-Za-z0-9]*$/', $class) !== 1) {
+            $this->error('域与控制器名只能包含字母数字，且以字母开头');
+
+            return 2;
+        }
+
+        $directory = $this->app->basePath('app/Api/' . $domain . '/Controller');
+        $file = $directory . '/' . $class . '.php';
+
+        if (is_file($file)) {
+            $this->error('控制器已存在：' . $file);
+
+            return 1;
+        }
+
+        if (!is_dir($directory) && !@mkdir($directory, 0755, true) && !is_dir($directory)) {
+            $this->error('无法创建目录：' . $directory);
+
+            return 1;
+        }
+
+        $code = "<?php\n\ndeclare(strict_types=1);\n\n"
+            . "namespace App\\Api\\{$domain}\\Controller;\n\n"
+            . "use SunsetReverie\\Http\\Request;\n\n"
+            . "/**\n * {$domain} 域 {$class}。\n */\n"
+            . "final class {$class}\n{\n"
+            . "    /**\n     * 列表。\n     *\n     * @param Request \$request 当前请求\n     * @return array<string, mixed> 响应数据\n     */\n"
+            . "    public function index(Request \$request): array\n    {\n        return ['items' => []];\n    }\n\n"
+            . "    /**\n     * 详情。\n     *\n     * @param int \$id 主键\n     * @return array<string, mixed> 响应数据\n     */\n"
+            . "    public function show(int \$id): array\n    {\n        return ['id' => \$id];\n    }\n\n"
+            . "    /**\n     * 创建。\n     *\n     * @param Request \$request 当前请求\n     * @return array<string, mixed> 响应数据\n     */\n"
+            . "    public function store(Request \$request): array\n    {\n        return ['created' => true];\n    }\n}\n";
+
+        file_put_contents($file, $code);
+        @chmod($file, 0644);
+
+        $this->line('已生成：' . $file);
+        $this->line('提示：记得在 routes/' . strtolower($domain) . '.php 中注册路由');
+
+        return 0;
+    }
+
+    /**
+     * jwt:secret：生成 JWT 密钥写入 .env。
+     *
+     * @param list<string> $args 参数（--show）
+     * @return int 退出码
+     */
+    private function jwtSecret(array $args): int
+    {
+        $secret = bin2hex(random_bytes(32));
+
+        if (in_array('--show', $args, true)) {
+            $this->line($secret);
+
+            return 0;
+        }
+
+        $envFile = $this->app->basePath('.env');
+
+        if (!is_file($envFile)) {
+            $this->error('未找到 .env，请先执行 sr key:generate 或手动创建');
+
+            return 1;
+        }
+
+        $content = (string) file_get_contents($envFile);
+
+        if (preg_match('/^JWT_SECRET=.*$/m', $content) === 1) {
+            $content = (string) preg_replace('/^JWT_SECRET=.*$/m', 'JWT_SECRET=' . $secret, $content);
+        } else {
+            $content = rtrim($content, "\n") . "\nJWT_SECRET=" . $secret . "\n";
+        }
+
+        if (file_put_contents($envFile, $content) === false) {
+            $this->error('.env 写入失败，请检查文件权限');
+
+            return 1;
+        }
+
+        $this->line('JWT_SECRET 已写入 .env（变更后所有已签发 Token 立即失效）');
+
+        return 0;
+    }
+
+    /**
+     * cache:clear：清空默认缓存驱动。
+     *
+     * @return int 退出码
+     */
+    private function cacheClear(): int
+    {
+        try {
+            $this->app->cache()->flush();
+        } catch (\Throwable $e) {
+            $this->error('清空缓存失败：' . $e->getMessage());
+
+            return 1;
+        }
+
+        $this->line('缓存已清空');
+
+        return 0;
+    }
+
+    /**
+     * domain:list：列出已配置的 API 域。
+     *
+     * @param list<string> $args 参数（--json）
+     * @return int 退出码
+     */
+    private function domainList(array $args): int
+    {
+        $registry = $this->app->container()->get(\SunsetReverie\Api\DomainRegistry::class);
+
+        if ($registry->isEmpty()) {
+            $this->line('未配置任何 API 域（单域模式，路由写在 routes/api.php）');
+
+            return 0;
+        }
+
+        if (in_array('--json', $args, true)) {
+            $rows = [];
+
+            foreach ($registry->all() as $domain) {
+                $rows[] = [
+                    'name' => $domain->name,
+                    'prefix' => $domain->prefix,
+                    'hosts' => $domain->hosts,
+                    'versions' => $domain->versions,
+                    'middleware' => $domain->middleware,
+                    'guard' => $domain->guard,
+                    'error_segment' => $domain->errorSegment,
+                ];
+            }
+
+            $this->line((string) json_encode($rows, JSON_UNESCAPED_UNICODE));
+
+            return 0;
+        }
+
+        $this->line(sprintf('共 %d 个域（默认：%s）', count($registry->all()), $registry->defaultName()));
+
+        foreach ($registry->all() as $domain) {
+            $this->line(sprintf(
+                '  %-10s prefix=/%-10s versions=%-10s 中间件 %d 个%s',
+                $domain->name,
+                $domain->prefix,
+                $domain->versions === [] ? '-' : implode(',', $domain->versions),
+                count($domain->middleware),
+                $domain->errorSegment === null ? '' : '  错误码段位 ' . $domain->errorSegment
+            ));
+        }
+
+        return 0;
+    }
+
+    /**
+     * db:seed：执行示例数据脚本。
+     *
+     * @param list<string> $args 参数（可选脚本名）
+     * @return int 退出码
+     */
+    private function dbSeed(array $args): int
+    {
+        $name = $this->firstArgument($args) ?? 'seed';
+        $file = $this->app->basePath('scripts/' . $name . '.php');
+
+        if (!is_file($file)) {
+            $this->error('种子脚本不存在：scripts/' . $name . '.php');
+
+            return 1;
+        }
+
+        $this->line('执行 scripts/' . $name . '.php');
+        $script = $file;
+
+        // 交给子进程执行，避免污染当前进程的容器与环境变量
+        $command = sprintf('%s %s', escapeshellarg(PHP_BINARY), escapeshellarg($script));
+        passthru($command, $exitCode);
+
+        return is_int($exitCode) ? $exitCode : 0;
+    }
+
+    /**
+     * upload:prune：清理过期的分片上传会话。
+     *
+     * @param list<string> $args 参数
+     * @return int 退出码
+     */
+    private function uploadPrune(array $args): int
+    {
+        try {
+            $manager = $this->app->container()->get(\SunsetReverie\Upload\Chunk\ChunkedUploadManager::class);
+            $count = $manager->prune();
+        } catch (\Throwable $e) {
+            $this->error('清理失败：' . $e->getMessage());
+
+            return 1;
+        }
+
+        $this->line($count === 0 ? '没有过期的上传会话' : sprintf('已清理 %d 个过期会话', $count));
+
+        return 0;
+    }
+
+    /**
+     * lint:isolation：域隔离检查（针对业务项目的 app/ 目录）。
+     *
+     * @param list<string> $args 参数（--json）
+     * @return int 退出码（有违规返回 1）
+     */
+    private function lintIsolation(array $args): int
+    {
+        $appPath = $this->app->basePath('app');
+
+        if (!is_dir($appPath)) {
+            $this->error('未找到 app/ 目录：lint:isolation 需要在业务项目中执行');
+
+            return 1;
+        }
+
+        $checker = new \SunsetReverie\Console\Lint\IsolationChecker($appPath);
+        $results = $checker->run();
+        $failed = 0;
+
+        if (in_array('--json', $args, true)) {
+            $this->line((string) json_encode($results, JSON_UNESCAPED_UNICODE));
+
+            foreach ($results as $result) {
+                $failed += $result['ok'] ? 0 : 1;
+            }
+
+            return $failed === 0 ? 0 : 1;
+        }
+
+        $this->line('域隔离检查（app/）');
+
+        if ($checker->domains() === []) {
+            $this->line('  - 未在 app/Api 下发现任何域，跳过');
+        } else {
+            $this->line('  域：' . implode('、', $checker->domains()));
+        }
+
+        foreach ($results as $result) {
+            if ($result['ok']) {
+                $this->line(sprintf('  %-6s OK   %s', $result['id'], $result['summary']));
+
+                continue;
+            }
+
+            $failed++;
+            $this->line(sprintf('  %-6s FAIL %s', $result['id'], $result['summary']));
+
+            foreach ($result['violations'] as $violation) {
+                $this->line('             ' . $violation);
+            }
+        }
+
+        $this->line('');
+        $this->line($failed === 0 ? '全部通过' : sprintf('%d 项未通过', $failed));
+
+        return $failed === 0 ? 0 : 1;
+    }
+
     // ── 运维命令 ──────────────────────────────────────────────────────
 
     /**
@@ -1092,12 +1394,19 @@ PHP;
         $this->line('  key:generate  生成 APP_KEY 并写入 .env（--show 只打印）');
         $this->line('  env:check     环境自检（PHP/扩展/目录/密钥/调试开关）');
         $this->line('  lint:architecture  架构检查（4 条依赖规则，CI 可用）');
+        $this->line('  lint:isolation     域隔离检查（3 条分层规则，CI 可用）');
         $this->line('  optimize      一键缓存（配置 + 路由）');
         $this->line('  optimize:clear 一键清除缓存');
         $this->line('  migrate       执行未运行的迁移');
         $this->line('  migrate:rollback [--step=1]  回滚最近批次');
         $this->line('  migrate:status 查看迁移状态');
         $this->line('  make:migration {name}        生成迁移文件');
+        $this->line('  make:controller {Domain/Name} 生成域控制器');
+        $this->line('  jwt:secret    生成 JWT 密钥并写入 .env（--show 只打印）');
+        $this->line('  cache:clear   清空默认缓存驱动');
+        $this->line('  domain:list   列出已配置的 API 域');
+        $this->line('  db:seed       执行 scripts/seed.php');
+        $this->line('  upload:prune  清理过期的分片上传会话');
         $this->line('  about         显示环境与框架信息');
         $this->line('  help          显示本帮助');
 

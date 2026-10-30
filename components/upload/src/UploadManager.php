@@ -6,6 +6,7 @@ namespace SunsetReverie\Upload;
 
 use SunsetReverie\Api\DomainContext;
 use SunsetReverie\Http\UploadedFile;
+use SunsetReverie\Exception\ErrorCode;
 use SunsetReverie\Upload\Exception\UploadException;
 use SunsetReverie\Upload\Storage\StorageInterface;
 
@@ -199,7 +200,7 @@ final class UploadManager
         $clientExtension = $file->clientExtension();
 
         if ($clientExtension !== '' && in_array($clientExtension, self::DANGEROUS_EXTENSIONS, true)) {
-            throw new UploadException('该文件类型不允许上传', 415);
+            throw new UploadException('该文件类型不允许上传', 415, ErrorCode::UnsupportedMediaType);
         }
 
         $mime = $file->detectedMimeType();
@@ -211,7 +212,7 @@ final class UploadManager
 
         // 图片再做结构校验：防止把脚本改名为 .jpg 蒙混过关
         if (str_starts_with($mime, 'image/') && $mime !== 'image/svg+xml' && !$file->isRealImage()) {
-            throw new UploadException('图片文件已损坏或格式不正确', 422);
+            throw new UploadException('图片文件已损坏或格式不正确', 422, ErrorCode::ValidationFailed);
         }
 
         return $mime;
@@ -233,7 +234,7 @@ final class UploadManager
         $directory = trim($directory, '/');
 
         if ($directory !== '' && preg_match('/^[A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)*$/', $directory) !== 1) {
-            throw new UploadException('非法的上传目录');
+            throw new UploadException('非法的上传目录', 500, ErrorCode::UploadFailed);
         }
 
         // 域隔离：admin 与 app 上传的文件落在不同物理目录
@@ -259,7 +260,7 @@ final class UploadManager
         $secret = (string) ($this->config['sign_secret'] ?? '');
 
         if ($secret === '') {
-            throw new UploadException('未配置上传签名密钥（upload.sign_secret）', 500);
+            throw new UploadException('未配置上传签名密钥（upload.sign_secret）', 500, ErrorCode::UploadFailed);
         }
 
         return hash_hmac('sha256', $path . '|' . $expires, $secret);

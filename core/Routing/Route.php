@@ -186,7 +186,14 @@ final class Route
         $params = [];
 
         foreach ($this->parameters as $index => $name) {
-            $params[$name] = $matches[$index + 1] ?? '';
+            /*
+             * 路径本身保持编码形式参与匹配，取出的参数需要还原。
+             * 否则中文 slug（`新写的文章` → `%E6%96%B0...`）会原样传给业务层，
+             * 拿去查库永远匹配不到，表现为"接口一直 404"。
+             *
+             * 用 rawurldecode 而非 urldecode：路径里的 `+` 是字面加号，不是空格。
+             */
+            $params[$name] = rawurldecode((string) ($matches[$index + 1] ?? ''));
         }
 
         return $params;

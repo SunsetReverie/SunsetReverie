@@ -27,6 +27,9 @@ abstract class FormRequest
     /** @var array<string, mixed> 已通过校验的数据 */
     private array $validatedData = [];
 
+    /** @var Request|null 原始请求（校验时注入） */
+    private ?Request $request = null;
+
     /**
      * 校验规则。
      *
@@ -80,6 +83,53 @@ abstract class FormRequest
     }
 
     /**
+     * 取原始请求。
+     *
+     * 需要用到未被校验的能力（文件上传、请求属性、请求头）时用它。
+     *
+     * @return Request|null 原始请求（尚未注入时为 null）
+     */
+    public function request(): ?Request
+    {
+        return $this->request;
+    }
+
+    /**
+     * 读取请求属性（中间件写入的数据，如当前登录用户）。
+     *
+     * @param string $key 属性名
+     * @param mixed $default 默认值
+     * @return mixed 属性值
+     */
+    public function attribute(string $key, mixed $default = null): mixed
+    {
+        return $this->request?->attribute($key, $default) ?? $default;
+    }
+
+    /**
+     * 读取请求头。
+     *
+     * @param string $name 头名
+     * @param string|null $default 默认值
+     * @return string|null 头值
+     */
+    public function header(string $name, ?string $default = null): ?string
+    {
+        return $this->request?->header($name, $default) ?? $default;
+    }
+
+    /**
+     * 读取上传文件。
+     *
+     * @param string $key 字段名
+     * @return \SunsetReverie\Http\UploadedFile|null 文件
+     */
+    public function file(string $key): ?\SunsetReverie\Http\UploadedFile
+    {
+        return $this->request?->file($key);
+    }
+
+    /**
      * 执行校验（由 Application 在参数注入时调用，业务代码不需要手动调）。
      *
      * @param Request $request 当前请求
@@ -90,6 +140,8 @@ abstract class FormRequest
      */
     public function validateResolved(Request $request, Validator $validator): void
     {
+        $this->request = $request;
+
         if (!$this->authorize($request)) {
             throw new HttpException(403, ErrorCode::Forbidden->value, '无权执行此操作');
         }

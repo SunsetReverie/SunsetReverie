@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace SunsetReverie\Http;
 
+use Closure;
+
 use JsonException;
 
 /**
@@ -18,6 +20,14 @@ final class Response
 {
     /** @var array<string, string> 响应头 */
     private array $headers = [];
+
+    /**
+     * 流式输出回调（null 表示普通响应）。
+     *
+     * 大文件/大结果集导出必须走这里：`file()` 与 `json()` 都会把内容
+     * 一次性读进内存，10 万行 CSV 足够把进程打爆。
+     */
+    private ?Closure $stream = null;
 
     /**
      * @param string $body 响应体
@@ -98,6 +108,47 @@ final class Response
             'Cache-Control' => 'private, no-store',
             'X-Content-Type-Options' => 'nosniff',
         ]);
+    }
+
+    /**
+     * 流式响应：内容边生成边发送，内存占用与数据量无关。
+     *
+     * 用法（CSV 导出）：
+     *
+     *   return Response::stream(function (): void {
+     *       $out = fopen('php://output', 'wb');
+     *       fputcsv($out, ['id', 'title']);
+     *
+     *       foreach ($rows as $row) {          // $rows 建议用生成器分批查
+     *           fputcsv($out, $row);
+     *       }
+     *
+     *       fclose($out);
+     *   }, ['Content-Type' => 'text/csv; charset=utf-8']);
+     *
+     * 注意：回调里**不要**再调用 `Response` 的构建方法——此时响应头已发送。
+     *
+     * @param Closure(): void $producer 输出回调
+     * @param array<string, string> $headers 响应头
+     * @param int $status HTTP 状态码
+     * @return self 响应实例
+     */
+    public static function stream(Closure $producer, array $headers = [], int $status = 200): self
+    {
+        $response = new self('', $status, $headers);
+        $response->stream = $producer;
+
+        return $response;
+    }
+
+    /**
+     * 是否为流式响应。
+     *
+     * @return bool 流式返回 true
+     */
+    public function isStreamed(): bool
+    {
+        return $this->stream !== null;
     }
 
     /**
@@ -190,8 +241,21 @@ final class Response
             }
         }
 
-        if ($sendBody && $this->status !== 204) {
-            echo $this->body;
+        if (!$sendBody || $this->status === 204) {
+            return;
         }
+
+        if ($this->stream !== null) {
+            // 关掉输出缓冲：否则每一块内容都先堆在 PHP 缓冲里，等于没省内存
+            while (ob_get_level() > 0) {
+                ob_end_flush();
+            }
+
+            ($this->stream)();
+
+            return;
+        }
+
+        echo $this->body;
     }
 }

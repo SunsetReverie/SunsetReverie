@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace SunsetReverie\Database\Exception;
 
 use RuntimeException;
+use SunsetReverie\Exception\ErrorCode;
+use SunsetReverie\Exception\HttpException;
 use Throwable;
 
 /**
@@ -13,7 +15,7 @@ use Throwable;
  * 注意：本异常的 message 含 SQL 原文，**只能进日志**，不得直接返回给客户端。
  * 统一异常处理（ErrorHandler）会把它降级为通用 500 响应。
  */
-final class QueryException extends RuntimeException
+final class QueryException extends HttpException
 {
     /**
      * @param string $sql SQL 语句
@@ -25,10 +27,12 @@ final class QueryException extends RuntimeException
         public readonly array $bindings,
         Throwable $previous,
     ) {
-        parent::__construct(
-            sprintf('SQL 执行失败：%s（%s）', $previous->getMessage(), $sql),
-            0,
-            $previous
-        );
+        // 保留原始 PDOException 作为 previous，便于日志里看到真正的 SQL 错误
+        parent::__construct(500, ErrorCode::DatabaseError->value, sprintf(
+            'SQL 执行失败：%s（%s）',
+            $previous->getMessage(),
+            $sql
+        ));
+        $this->previous = $previous;
     }
 }

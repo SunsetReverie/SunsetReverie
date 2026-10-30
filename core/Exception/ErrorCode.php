@@ -21,17 +21,39 @@ enum ErrorCode: int
     case Unauthenticated = 20001;
     case TokenExpired = 20002;
     case Forbidden = 20003;
+    case AccountDisabled = 20004;
     case TooManyRequests = 20005;
+    case SignatureExpired = 20006;
+    case SignatureReplayed = 20007;
+    case SignatureInvalid = 20008;
+    case CredentialsInvalid = 20009;
     case TokenDomainMismatch = 20010;
     case SignedUrlExpired = 20011;
 
     case ValidationFailed = 30001;
     case InvalidJson = 30002;
     case MissingParameter = 30003;
+    case InvalidParameterType = 30004;
+    case UnsupportedMediaType = 30005;
+    case NotAcceptable = 30006;
+    case MissingIdempotencyKey = 30007;
 
     case NotFound = 40001;
     case RouteNotFound = 40002;
     case MethodNotAllowed = 40003;
+    case AlreadyExists = 40004;
+    case StateConflict = 40005;
+    case ResourceGone = 40006;
+    case PayloadTooLarge = 40007;
+    case DomainNotFound = 40008;
+    case IdempotencyConflict = 40009;
+    case VersionConflict = 40010;
+
+    case DatabaseError = 60001;
+    case UploadFailed = 60002;
+    case CacheError = 60003;
+    case StorageError = 60004;
+    case UpstreamError = 60005;
 
     /**
      * 获取对应的 HTTP 状态码。
@@ -59,6 +81,27 @@ enum ErrorCode: int
             self::MissingParameter => 400,
             self::RouteNotFound => 404,
             self::MethodNotAllowed => 405,
+            self::AccountDisabled => 403,
+            self::SignatureExpired => 401,
+            self::SignatureReplayed => 401,
+            self::SignatureInvalid => 401,
+            self::CredentialsInvalid => 401,
+            self::InvalidParameterType => 400,
+            self::UnsupportedMediaType => 415,
+            self::NotAcceptable => 406,
+            self::MissingIdempotencyKey => 400,
+            self::AlreadyExists => 409,
+            self::StateConflict => 409,
+            self::ResourceGone => 410,
+            self::PayloadTooLarge => 413,
+            self::DomainNotFound => 404,
+            self::IdempotencyConflict => 409,
+            self::VersionConflict => 409,
+            self::DatabaseError => 500,
+            self::UploadFailed => 500,
+            self::CacheError => 500,
+            self::StorageError => 500,
+            self::UpstreamError => 502,
         };
     }
 
@@ -81,13 +124,34 @@ enum ErrorCode: int
             self::Forbidden => '无权限执行此操作',
             self::TooManyRequests => '请求过于频繁，请稍后再试',
             self::TokenDomainMismatch => '凭证与当前接口域不匹配',
-            self::SignedUrlExpired => '链接已失效，请重新获取',
+            self::SignedUrlExpired => '链接已失效或已过期',
             self::NotFound => '资源不存在',
             self::ValidationFailed => '参数校验失败',
             self::InvalidJson => '请求体不是合法 JSON',
             self::MissingParameter => '缺少必要参数',
             self::RouteNotFound => '接口不存在',
             self::MethodNotAllowed => '请求方法不被允许',
+            self::AccountDisabled => '账户已被禁用',
+            self::SignatureExpired => '请求已过期',
+            self::SignatureReplayed => '重复请求',
+            self::SignatureInvalid => '签名校验失败',
+            self::CredentialsInvalid => '账号或密码错误',
+            self::InvalidParameterType => '参数类型错误',
+            self::UnsupportedMediaType => '不支持的请求内容类型',
+            self::NotAcceptable => '不支持的响应格式',
+            self::MissingIdempotencyKey => '缺少 Idempotency-Key 请求头',
+            self::AlreadyExists => '资源已存在',
+            self::StateConflict => '资源状态冲突',
+            self::ResourceGone => '资源已失效',
+            self::PayloadTooLarge => '请求体过大',
+            self::DomainNotFound => '请求未匹配任何 API 域',
+            self::IdempotencyConflict => '相同幂等键的请求正在处理中',
+            self::VersionConflict => '数据已被他人修改，请刷新后重试',
+            self::DatabaseError => '数据库操作失败',
+            self::UploadFailed => '文件上传失败',
+            self::CacheError => '缓存服务异常',
+            self::StorageError => '存储服务异常',
+            self::UpstreamError => '上游服务异常',
         };
     }
 
@@ -117,6 +181,27 @@ enum ErrorCode: int
             self::MissingParameter => 'SR.HTTP.MISSING_PARAMETER',
             self::RouteNotFound => 'SR.ROUTE.NOT_FOUND',
             self::MethodNotAllowed => 'SR.ROUTE.METHOD_NOT_ALLOWED',
+            self::AccountDisabled => 'SR.AUTH.ACCOUNT_DISABLED',
+            self::SignatureExpired => 'SR.AUTH.SIGNATURE_EXPIRED',
+            self::SignatureReplayed => 'SR.AUTH.SIGNATURE_REPLAYED',
+            self::SignatureInvalid => 'SR.AUTH.SIGNATURE_INVALID',
+            self::CredentialsInvalid => 'SR.AUTH.CREDENTIALS_INVALID',
+            self::InvalidParameterType => 'SR.REQUEST.INVALID_PARAMETER_TYPE',
+            self::UnsupportedMediaType => 'SR.REQUEST.UNSUPPORTED_MEDIA_TYPE',
+            self::NotAcceptable => 'SR.REQUEST.NOT_ACCEPTABLE',
+            self::MissingIdempotencyKey => 'SR.REQUEST.MISSING_IDEMPOTENCY_KEY',
+            self::AlreadyExists => 'SR.RESOURCE.ALREADY_EXISTS',
+            self::StateConflict => 'SR.RESOURCE.STATE_CONFLICT',
+            self::ResourceGone => 'SR.RESOURCE.GONE',
+            self::PayloadTooLarge => 'SR.REQUEST.PAYLOAD_TOO_LARGE',
+            self::DomainNotFound => 'SR.RESOURCE.DOMAIN_NOT_FOUND',
+            self::IdempotencyConflict => 'SR.RESOURCE.IDEMPOTENCY_CONFLICT',
+            self::VersionConflict => 'SR.RESOURCE.VERSION_CONFLICT',
+            self::DatabaseError => 'SR.DATABASE.ERROR',
+            self::UploadFailed => 'SR.STORAGE.UPLOAD_FAILED',
+            self::CacheError => 'SR.CACHE.ERROR',
+            self::StorageError => 'SR.STORAGE.ERROR',
+            self::UpstreamError => 'SR.UPSTREAM.ERROR',
         };
     }
 

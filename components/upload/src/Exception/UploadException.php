@@ -17,10 +17,11 @@ final class UploadException extends HttpException
     /**
      * @param string $message 面向用户的消息
      * @param int $status HTTP 状态码
+     * @param ErrorCode $code 业务错误码
      */
-    public function __construct(string $message, int $status = 422)
+    public function __construct(string $message, int $status = 500, ErrorCode $code = ErrorCode::UploadFailed)
     {
-        parent::__construct($status, ErrorCode::ValidationFailed->value, $message);
+        parent::__construct($status, $code->value, $message);
     }
 
     /**
@@ -33,7 +34,8 @@ final class UploadException extends HttpException
     {
         return new self(
             sprintf('文件超过允许的大小（最大 %s）', self::humanSize($maxSize)),
-            413
+            413,
+            ErrorCode::PayloadTooLarge
         );
     }
 
@@ -45,7 +47,7 @@ final class UploadException extends HttpException
      */
     public static function invalidType(string $mime): self
     {
-        return new self(sprintf('不支持的文件类型：%s', $mime), 415);
+        return new self(sprintf('不支持的文件类型：%s', $mime), 415, ErrorCode::UnsupportedMediaType);
     }
 
     /**

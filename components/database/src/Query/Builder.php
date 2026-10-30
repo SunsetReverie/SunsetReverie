@@ -577,6 +577,69 @@ final class Builder
     }
 
     /**
+     * 批量插入（单条 SQL，多值行）。
+     *
+     * 为什么需要它：给 1000 个用户发通知时，循环 `insert()` 会产生 1000 次
+     * 数据库往返（本地约 1ms/次，跨网络可能 5ms 以上）。多值 INSERT 一次搞定。
+     *
+     * SQLite 的绑定变量上限是 999，MySQL 也有限制，因此按 500 行分批。
+     *
+     * @param list<array<string, mixed>> $rows 行数据（每行的列必须一致）
+     * @return int 插入行数
+     * @throws InvalidArgumentException 数据为空或列不一致时抛出
+     */
+    public function insertMany(array $rows): int
+    {
+        if ($rows === []) {
+            return 0;
+        }
+
+        $columns = array_keys($rows[0]);
+
+        if ($columns === []) {
+            throw new InvalidArgumentException('insertMany() 的行不能为空数组');
+        }
+
+        foreach ($columns as $column) {
+            $this->assertIdentifier((string) $column);
+        }
+
+        $inserted = 0;
+
+        foreach (array_chunk($rows, 500) as $chunk) {
+            // 同一批次的列必须一致，否则占位符数量对不上
+            foreach ($chunk as $row) {
+                if (array_keys($row) !== $columns) {
+                    throw new InvalidArgumentException('insertMany() 的所有行必须拥有相同的列');
+                }
+            }
+
+            $placeholder = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
+            $values = [];
+            $bindings = [];
+
+            foreach ($chunk as $row) {
+                $values[] = $placeholder;
+
+                foreach ($columns as $column) {
+                    $bindings[] = $row[$column] ?? null;
+                }
+            }
+
+            $sql = sprintf(
+                'INSERT INTO %s (%s) VALUES %s',
+                $this->table,
+                implode(', ', $columns),
+                implode(', ', $values)
+            );
+
+            $inserted += $this->connection->affect($sql, $bindings);
+        }
+
+        return $inserted;
+    }
+
+    /**
      * 插入并返回自增主键。
      *
      * @param array<string, mixed> $data 字段 => 值

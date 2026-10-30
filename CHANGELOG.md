@@ -8,6 +8,31 @@
 
 - 待办见文档 18.3.0「当前验收状态」的缺口列表
 
+## [0.31.0] - 2026-10-30
+
+### 新增
+
+- `Builder::insertMany(array $rows)`：多值 INSERT 批量写入
+  - 给 1000 个用户发通知时，循环 `insert()` 是 1000 次数据库往返
+  - 按 500 行分批（SQLite 绑定变量上限 999）
+  - 行之间列不一致直接报错，不静默补 null
+
+### 修复
+
+- **`Pipeline` 未把 Request 同步回容器**（严重）
+
+`Request` 是不可变的，中间件用 `withAttribute()` 会产生 clone，
+但容器里存的是进管道前的旧实例。结果：认证中间件写入的 `auth.user`
+永远读不到，`Auth::user()` / `Auth::id()` 恒为 `null`。
+
+表现很隐蔽——控制器里"取当前用户"拿到 0/null，业务逻辑静默走错分支，
+不报错也难以从日志看出。
+
+修复方式：Pipeline 每次往下传时 `$container->instance(Request::class, $request)`。
+
+这个缺陷在 v0.20 引入 `AuthManager::user()` 时就存在，
+但当时只测了"未登录返回 null"，没测"登录后能拿到"。
+
 ## [0.30.0] - 2026-10-30
 
 ### 新增

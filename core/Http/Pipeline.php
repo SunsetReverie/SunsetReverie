@@ -102,6 +102,20 @@ final class Pipeline
             ));
         }
 
-        return static fn (Request $request): Response => $instance->handle($request, $next);
+        /*
+         * 每次往下传时把 Request 同步进容器。
+         *
+         * 原因：Request 是不可变的，`withAttribute()` 返回 clone 的新实例，
+         * 而容器里存的是进管道前的那个。不同步的话，
+         * 认证中间件写入的 `auth.user` 永远不会出现在容器里，
+         * `Auth::user() / Auth::id()` 会一直返回 null。
+         */
+        $nextWithSync = function (Request $request) use ($next): Response {
+            $this->container->instance(Request::class, $request);
+
+            return $next($request);
+        };
+
+        return static fn (Request $request): Response => $instance->handle($request, $nextWithSync);
     }
 }

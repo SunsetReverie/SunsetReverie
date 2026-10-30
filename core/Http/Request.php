@@ -27,6 +27,7 @@ final class Request
      * @param string $path 请求路径（不含查询串）
      * @param array<string, mixed> $query 查询参数
      * @param array<string, mixed> $post 表单参数
+     * @param array<string, mixed> $files 上传文件（$_FILES 结构）
      * @param string $rawBody 原始请求体
      * @param string $requestId 请求追踪 ID
      * @param string $ip 客户端 IP
@@ -38,6 +39,7 @@ final class Request
         public readonly string $path,
         private readonly array $query,
         private readonly array $post,
+        private readonly array $files,
         private readonly string $rawBody,
         public readonly string $requestId,
         public readonly string $ip,
@@ -86,6 +88,7 @@ final class Request
             path: $path,
             query: $_GET,
             post: $_POST,
+            files: $_FILES,
             rawBody: (string) file_get_contents('php://input'),
             requestId: $requestId,
             ip: (string) ($server['REMOTE_ADDR'] ?? '0.0.0.0'),
@@ -102,6 +105,7 @@ final class Request
      * @param array<string, mixed> $query 查询参数
      * @param string $rawBody 原始请求体
      * @param array<string, string> $headers 请求头
+     * @param array<string, mixed> $files 上传文件
      * @return self 请求实例
      */
     public static function create(
@@ -110,12 +114,14 @@ final class Request
         array $query = [],
         string $rawBody = '',
         array $headers = [],
+        array $files = [],
     ): self {
         return new self(
             method: strtoupper($method),
             path: $path,
             query: $query,
             post: [],
+            files: $files,
             rawBody: $rawBody,
             requestId: Str::uuid7(),
             ip: '127.0.0.1',
@@ -190,6 +196,40 @@ final class Request
         }
 
         return $decoded;
+    }
+
+    /**
+     * 获取上传文件。
+     *
+     * 返回的对象即使上传失败也会带出错误码（用 isValid() 判断），
+     * 便于直接给出"文件过大"这类提示，而不是笼统的"没有文件"。
+     *
+     * @param string $key 字段名
+     * @return UploadedFile|null 文件对象
+     */
+    public function file(string $key): ?UploadedFile
+    {
+        $file = $this->files[$key] ?? null;
+
+        if (!is_array($file)) {
+            return null;
+        }
+
+        return UploadedFile::fromArray($file);
+    }
+
+    /**
+     * 是否存在指定字段的上传。
+     *
+     * @param string $key 字段名
+     * @return bool 存在返回 true
+     */
+    public function hasFile(string $key): bool
+    {
+        $file = $this->files[$key] ?? null;
+
+        return is_array($file)
+            && (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
     }
 
     /**

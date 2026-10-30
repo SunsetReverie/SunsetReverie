@@ -35,6 +35,9 @@ use SunsetReverie\Log\LogServiceProvider;
 use SunsetReverie\Http\Response;
 use SunsetReverie\RateLimit\RateLimitServiceProvider;
 use SunsetReverie\Routing\Router;
+use SunsetReverie\Upload\Controller\FileController;
+use SunsetReverie\Upload\UploadManager;
+use SunsetReverie\Upload\UploadServiceProvider;
 use SunsetReverie\Validation\ValidationServiceProvider;
 use SunsetReverie\Validation\Validator;
 
@@ -50,7 +53,7 @@ use SunsetReverie\Validation\Validator;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.8.0';
+    public const VERSION = '0.9.0';
 
     private static ?self $instance = null;
 
@@ -179,6 +182,16 @@ final class Application
     public function cache(?string $name = null): CacheStoreInterface
     {
         return $this->container->get(CacheManager::class)->store($name);
+    }
+
+    /**
+     * 获取上传管理器。
+     *
+     * @return UploadManager 上传管理器
+     */
+    public function upload(): UploadManager
+    {
+        return $this->container->get(UploadManager::class);
     }
 
     /**
@@ -402,6 +415,7 @@ final class Application
             AuthServiceProvider::class,
             RateLimitServiceProvider::class,
             LogServiceProvider::class,
+            UploadServiceProvider::class,
         ];
 
         $configured = $this->config->get('app.providers');
@@ -565,6 +579,9 @@ final class Application
     private function registerDefaultRoutes(): void
     {
         $this->router->get('/health', [HealthController::class, 'index'], 'framework.health');
+
+        // 私有文件访问入口（签名 URL 的验证端，见 upload.signedUrl）
+        $this->router->get('/files', [FileController::class, 'show'], 'framework.file');
     }
 
     /**

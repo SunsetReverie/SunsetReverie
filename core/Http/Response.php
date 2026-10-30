@@ -66,6 +66,41 @@ final class Response
     }
 
     /**
+     * 构造文件响应（用于私有文件下载/预览）。
+     *
+     * 说明：当前实现一次性读入内存，适用于受 `upload.max_size` 限制的文件；
+     * 超大文件（>50MB）应改用流式输出。
+     *
+     * @param string $absolutePath 文件绝对路径
+     * @param string $downloadName 展示文件名（为空则用路径 basename）
+     * @param string $mime 强制 MIME（为空则按内容检测）
+     * @return self 响应实例
+     */
+    public static function file(string $absolutePath, string $downloadName = '', string $mime = ''): self
+    {
+        $contents = @file_get_contents($absolutePath);
+
+        if ($contents === false) {
+            return self::text('文件读取失败', 500);
+        }
+
+        if ($mime === '') {
+            $detected = @mime_content_type($absolutePath);
+            $mime = is_string($detected) && $detected !== '' ? $detected : 'application/octet-stream';
+        }
+
+        $name = $downloadName !== '' ? $downloadName : basename($absolutePath);
+
+        return new self($contents, 200, [
+            'Content-Type' => $mime,
+            'Content-Length' => (string) strlen($contents),
+            'Content-Disposition' => 'inline; filename="' . rawurlencode($name) . '"',
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    /**
      * 构造空响应（204 无响应体）。
      *
      * @return self 响应实例

@@ -22,11 +22,13 @@ enum ErrorCode: int
     case TokenExpired = 20002;
     case Forbidden = 20003;
     case TooManyRequests = 20005;
+    case SignedUrlExpired = 20011;
 
     case ValidationFailed = 30001;
     case InvalidJson = 30002;
     case MissingParameter = 30003;
 
+    case NotFound = 40001;
     case RouteNotFound = 40002;
     case MethodNotAllowed = 40003;
 
@@ -48,6 +50,8 @@ enum ErrorCode: int
             self::TokenExpired => 401,
             self::Forbidden => 403,
             self::TooManyRequests => 429,
+            self::SignedUrlExpired => 403,
+            self::NotFound => 404,
             self::ValidationFailed => 422,
             self::InvalidJson => 400,
             self::MissingParameter => 400,
@@ -74,6 +78,8 @@ enum ErrorCode: int
             self::TokenExpired => '登录已过期，请重新登录',
             self::Forbidden => '无权限执行此操作',
             self::TooManyRequests => '请求过于频繁，请稍后再试',
+            self::SignedUrlExpired => '链接已失效，请重新获取',
+            self::NotFound => '资源不存在',
             self::ValidationFailed => '参数校验失败',
             self::InvalidJson => '请求体不是合法 JSON',
             self::MissingParameter => '缺少必要参数',
@@ -100,6 +106,8 @@ enum ErrorCode: int
             self::TokenExpired => 'SR.AUTH.TOKEN_EXPIRED',
             self::Forbidden => 'SR.AUTH.FORBIDDEN',
             self::TooManyRequests => 'SR.AUTH.TOO_MANY_REQUESTS',
+            self::SignedUrlExpired => 'SR.AUTH.SIGNED_URL_EXPIRED',
+            self::NotFound => 'SR.RESOURCE.NOT_FOUND',
             self::ValidationFailed => 'SR.VALIDATION.FAILED',
             self::InvalidJson => 'SR.HTTP.INVALID_JSON',
             self::MissingParameter => 'SR.HTTP.MISSING_PARAMETER',

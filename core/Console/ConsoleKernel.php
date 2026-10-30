@@ -283,8 +283,26 @@ declare(strict_types=1);
 \$basePath = {$basePathVar};
 \$path = parse_url(\$_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 
-// 静态资源与上传文件交给内置服务器直接读取
-if (str_starts_with(\$path, '/uploads/') || (is_file(\$basePath . '/public' . \$path) && !str_contains(\$path, '..'))) {
+// 上传文件在 storage/uploads 下（不在 public 里），需手动映射；
+// 生产环境由 Nginx alias 处理，这里只是开发环境的等价实现
+if (str_starts_with(\$path, '/uploads/')) {
+    \$file = \$basePath . '/storage' . \$path;
+
+    if (is_file(\$file) && !str_contains(\$path, '..')) {
+        header('Content-Type: ' . (mime_content_type(\$file) ?: 'application/octet-stream'));
+        header('Content-Length: ' . filesize(\$file));
+        readfile(\$file);
+
+        return;
+    }
+
+    http_response_code(404);
+
+    return;
+}
+
+// public 下的静态资源交给内置服务器直接读取
+if (is_file(\$basePath . '/public' . \$path) && !str_contains(\$path, '..')) {
     return false;
 }
 

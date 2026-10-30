@@ -109,7 +109,21 @@ final class RedisStore implements CacheStoreInterface
      */
     public function flush(): bool
     {
-        $pattern = $this->prefix === '' ? '*' : $this->prefix . '*';
+        /*
+         * 前缀为空时拒绝执行。
+         *
+         * 空前缀会拼出 pattern `*`，等于清空整个 Redis 库——
+         * 同一实例上往往还跑着别的应用，这属于不可逆的误删。
+         * 宁可报错让人显式配置 prefix，也不做"看起来成功"的破坏性操作。
+         */
+        if ($this->prefix === '') {
+            throw new CacheException(
+                '拒绝执行 flush：缓存前缀为空（会清空整个 Redis 库，含其他应用的数据）。'
+                . '请在 config/cache.php 设置 cache.prefix。'
+            );
+        }
+
+        $pattern = $this->prefix . '*';
         $deleted = 0;
 
         try {

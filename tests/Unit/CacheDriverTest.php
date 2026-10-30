@@ -260,4 +260,32 @@ final class CacheDriverTest extends TestCase
 
         return PHP_SAPI !== 'cli' || (string) ini_get('apc.enable_cli') === '1';
     }
+
+    /**
+     * Redis：前缀为空时 flush 必须拒绝，而不是清空整个库。
+     *
+     * 空前缀会拼出 pattern `*`，同一 Redis 实例上往往还跑着别的应用，
+     * 这属于不可逆的误删——宁可报错让人去配 prefix。
+     *
+     * @return void
+     */
+    public function testRedisFlushRefusesEmptyPrefix(): void
+    {
+        if (!$this->redisAvailable()) {
+            return;
+        }
+
+        // 先塞一个"别人的" key，确认它不会被误删
+        $other = new RedisStore(['host' => '127.0.0.1', 'port' => 6379, 'timeout' => 1], 'other-app:', 60);
+        $other->put('data', 'theirs', 60);
+
+        $noPrefix = new RedisStore(['host' => '127.0.0.1', 'port' => 6379, 'timeout' => 1], '', 60);
+
+        $e = $this->assertThrows(CacheException::class, static fn () => $noPrefix->flush());
+
+        $this->assertStringContains('前缀为空', $e->getMessage(), '错误提示应说明是前缀问题');
+        $this->assertSame('theirs', $other->get('data'), '其他应用的 key 不应被清掉');
+
+        $other->flush();
+    }
 }

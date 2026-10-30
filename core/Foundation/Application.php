@@ -62,7 +62,7 @@ use SunsetReverie\Validation\Validator;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.26.1';
+    public const VERSION = '0.27.0';
 
     private static ?self $instance = null;
 

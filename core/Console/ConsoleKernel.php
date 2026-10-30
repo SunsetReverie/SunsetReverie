@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SunsetReverie\Console;
 
 use SunsetReverie\Config\Env;
+use SunsetReverie\Api\DomainRegistry;
 use SunsetReverie\Foundation\Application;
 
 /**

@@ -8,6 +8,29 @@
 
 - 待办见文档 18.3.0「当前验收状态」的缺口列表
 
+## [0.43.1] - 2026-10-30
+
+### 修复
+
+- `ARCH-8` 在找不到 `autoload.php` 时只输出 PHP warning，而不是明确报违规
+
+用 `php -n`（不加载 php.ini，模拟干净环境）跑测试时发现：
+
+```text
+Warning: file_get_contents(.../core/Foundation/autoload.php):
+         Failed to open stream: No such file or directory
+```
+
+warning 会被 `error_reporting`、SAPI、错误处理器差别对待——
+有时是噪声、有时被静默吞掉。这类「配置错了」应该显式说出来。
+
+改为返回带具体路径的违规信息（并指出 `frameworkRoot` 的值）。
+
+### 说明
+
+这个 bug 不是 CI 才能发现的：本地 `php -n` 就能复现，
+说明「换个环境跑」这件事不依赖 GitHub Actions。
+
 ## [0.43.0] - 2026-10-30
 
 ### 修复

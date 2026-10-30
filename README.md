@@ -139,7 +139,7 @@ final class PostService
 | 不做 | 原因 |
 | --- | --- |
 | **ORM** | 隐式 SQL 与 N+1 在真实业务里更难排查。Query Builder + 领域服务已够用，且能一眼看出查了几次库 |
-| **Gate / Policy** | 完整授权体系是大工程。四档做法（中间件 / 服务内判断 / 独立策略类 / 数据归属过滤）见文档 11.2 |
+| **Gate / Policy** | 完整授权体系是大工程。四档做法：路由中间件 / 服务内判断 / 独立策略类 / 数据归属过滤（`where user_id`） |
 | **自动 CRUD 生成** | 生成的代码往往要改一半，不如手写清楚 |
 | **内置前端 / 模板引擎** | 这是 API 框架 |
 
@@ -149,22 +149,20 @@ final class PostService
 
 | 文档 | 内容 |
 | --- | --- |
-| [产品规划](docs/product-plan/夕梦框架产品规划文档.md) | 设计决策与完整能力说明（含「为什么这样设计」） |
-| [升级指南](docs/upgrade.md) | 破坏性变更与迁移方法 |
-| [v1.0 交付清单](docs/v1.0-checklist.md) | 13 条发布门禁的当前进度 |
-| [参与贡献](CONTRIBUTING.md) | 代码风格、架构约定、提交流程 |
 | [安全策略](SECURITY.md) | 漏洞报告、已有安全设计、部署清单 |
+| [变更记录](CHANGELOG.md) | 每个版本改了什么、修了哪些 bug |
+
+设计决策与完整能力说明（产品规划、升级指南、架构约定）目前在内部维护，
+**暂未随仓库发布**。有需要可以联系维护者。
 
 ---
 
 ## 当前状态
 
 ```text
-版本     0.41.0（开发阶段，接口可能变化）
-测试     315 用例 / 799 断言
-架构     8 项检查全过
-静态分析 PHPStan level 6 零错误
-门禁     13 条中达成 7 条
+版本     0.43.1（开发阶段，接口可能变化）
+测试     338 用例 / 907 断言
+覆盖     core（除 CLI）82.5% / components 75.6%
 ```
 
 ### 已验证的环境
@@ -179,20 +177,14 @@ final class PostService
 
 ---
 
-## 开发
+## 关于这个项目
 
-```bash
-./scripts/ci.sh                  # 全部检查
-php tests/run.php                # 单元测试
-php bin/sr lint:architecture     # 架构检查
-```
+这是一个**由单人维护**的框架项目。核心代码不接受外部提交，
+但欢迎反馈：发现问题请提 issue，安全相关请按 [SECURITY.md](SECURITY.md) 的渠道联系。
 
-静态分析需要单独下载 PHPStan（不引入 Composer）：
-
-```bash
-curl -L -o phpstan.phar https://github.com/phpstan/phpstan/releases/latest/download/phpstan.phar
-php phpstan.phar analyse --memory-limit=1G
-```
+仓库目前只包含框架本体与测试代码。CI、静态分析配置、内部设计文档
+在维护者本地运行和保管，不随仓库分发——这不是缺失，是刻意为之：
+在框架稳定之前，对外只提供使用者需要的那部分。
 
 ---
 

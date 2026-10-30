@@ -41,6 +41,8 @@ use SunsetReverie\Log\LogManager;
 use SunsetReverie\Log\Middleware\LogRequest;
 use SunsetReverie\Log\LogServiceProvider;
 use SunsetReverie\Http\Response;
+use SunsetReverie\Mail\MailManager;
+use SunsetReverie\Mail\MailServiceProvider;
 use SunsetReverie\Queue\QueueManager;
 use SunsetReverie\Queue\QueueServiceProvider;
 use SunsetReverie\RateLimit\RateLimitServiceProvider;
@@ -65,7 +67,7 @@ use SunsetReverie\Validation\Validator;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.32.0';
+    public const VERSION = '0.33.0';
 
     private static ?self $instance = null;
 
@@ -214,6 +216,16 @@ final class Application
     public function domain(): DomainContext
     {
         return $this->domainContext;
+    }
+
+    /**
+     * 获取邮件管理器。
+     *
+     * @return MailManager 邮件管理器
+     */
+    public function mail(): MailManager
+    {
+        return $this->container->get(MailManager::class);
     }
 
     /**
@@ -494,6 +506,7 @@ final class Application
             LogServiceProvider::class,
             UploadServiceProvider::class,
             QueueServiceProvider::class,
+            MailServiceProvider::class,
         ];
 
         $configured = $this->config->get('app.providers');

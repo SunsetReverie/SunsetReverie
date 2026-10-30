@@ -8,6 +8,26 @@
 
 - 待办见文档 18.3.0「当前验收状态」的缺口列表
 
+## [0.33.0] - 2026-10-30
+
+### 新增
+
+- **邮件组件**（`components/mail`）：配合队列异步发送
+
+| 部件 | 职责 |
+| --- | --- |
+| `Message` | 标量属性，可 JSON 序列化进队列；`plainText()` 从 HTML 剥离 |
+| `MailerInterface` | 失败必须抛异常——队列靠异常判断是否重试 |
+| `SmtpMailer` | `fsockopen` 手写 EHLO / AUTH LOGIN / DATA，正文 base64 |
+| `LogMailer` | 只写日志，本地开发与测试用 |
+
+### 明确边界
+
+**不支持 TLS**。证书校验、SNI、协议降级手写极易出错，
+而发邮件 90% 的场景是走内网 relay 或第三方 API。
+需要加密通道时先部署本地 relay（postfix / mailpit）由它转发，
+或自行实现 `MailerInterface`。
+
 ## [0.32.0] - 2026-10-30
 
 ### 新增

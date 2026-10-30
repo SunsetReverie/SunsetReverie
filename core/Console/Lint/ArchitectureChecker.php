@@ -41,6 +41,8 @@ final class ArchitectureChecker
         'ratelimit' => ['cache'],
         // database 驱动的队列就是把任务存进数据库表，离不开连接
         'queue' => ['database'],
+        // log 驱动的邮件器（本地开发不发真邮件）需要写日志
+        'mail' => ['log'],
     ];
 
     /** @var list<string> 组件名（由 components/ 目录扫描得到） */

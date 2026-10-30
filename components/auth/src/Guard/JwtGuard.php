@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace SunsetReverie\Auth\Guard;
 
+use SunsetReverie\Api\DomainContext;
 use SunsetReverie\Auth\AuthenticatedUser;
 use SunsetReverie\Auth\Exception\AuthenticationException;
 use SunsetReverie\Auth\Jwt\JwtCodec;
+use SunsetReverie\Exception\ErrorCode;
 use SunsetReverie\Http\Request;
 
 /**
@@ -23,11 +25,15 @@ final class JwtGuard
      * @param JwtCodec $codec 编解码器
      * @param int $ttl 签发有效期（秒）
      * @param string $claimKey 主体标识所在的声明名
+     * @param DomainContext|null $domainContext 域上下文（多域时用于 aud 校验）
+     * @param bool $enforceAudience 是否强制校验 aud
      */
     public function __construct(
         private readonly JwtCodec $codec,
         private readonly int $ttl = 7200,
         private readonly string $claimKey = 'sub',
+        private readonly ?DomainContext $domainContext = null,
+        private readonly bool $enforceAudience = true,
     ) {
     }
 
@@ -40,6 +46,13 @@ final class JwtGuard
      */
     public function issue(string $subject, array $claims = []): string
     {
+        // 多域项目：把当前域写进 aud，另一个域拿到这个 Token 会验不过
+        $audience = $this->domainContext?->name() ?? '';
+
+        if ($audience !== '' && $this->enforceAudience && !isset($claims['aud'])) {
+            $claims['aud'] = $audience;
+        }
+
         return $this->codec->encode([$this->claimKey => $subject] + $claims, $this->ttl);
     }
 
@@ -67,6 +80,8 @@ final class JwtGuard
             throw new AuthenticationException($e->getMessage(), $code);
         }
 
+        $this->assertAudience($payload);
+
         $subject = $payload[$this->claimKey] ?? null;
 
         if (!is_string($subject) && !is_int($subject)) {
@@ -88,6 +103,38 @@ final class JwtGuard
             return $this->user($request);
         } catch (AuthenticationException) {
             return null;
+        }
+    }
+
+    /**
+     * 校验 Token 的受众（aud）是否与当前域一致。
+     *
+     * 单域项目（无域配置）不校验；多域项目**没有 aud 的 Token 同样拒绝**，
+     * 否则等于留下"去掉 aud 就能跨域使用"的后门。
+     *
+     * @param array<string, mixed> $payload Token 载荷
+     * @return void
+     * @throws AuthenticationException 域不匹配时抛出
+     */
+    private function assertAudience(array $payload): void
+    {
+        if (!$this->enforceAudience) {
+            return;
+        }
+
+        $current = $this->domainContext?->name() ?? '';
+
+        if ($current === '') {
+            return;
+        }
+
+        $audience = $payload['aud'] ?? null;
+
+        if ($audience !== $current) {
+            throw new AuthenticationException(
+                ErrorCode::TokenDomainMismatch->message(),
+                ErrorCode::TokenDomainMismatch->value,
+            );
         }
     }
 

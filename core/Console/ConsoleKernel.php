@@ -462,6 +462,21 @@ PHP;
     private function routeList(array $args): int
     {
         $routes = $this->app->router()->routes();
+        $domain = $this->optionValue($args, 'domain', '');
+
+        if ($domain !== '') {
+            $routes = array_values(array_filter(
+                $routes,
+                static fn ($route): bool => $route->name !== null
+                    && str_starts_with($route->name, $domain . '.')
+            ));
+
+            if ($routes === []) {
+                $this->error(sprintf('域 [%s] 下没有已注册路由（检查 config/api.php 与 routes/%s.php）', $domain, $domain));
+
+                return 1;
+            }
+        }
 
         if (in_array('--json', $args, true)) {
             $rows = array_map(static fn ($route): array => [
@@ -476,7 +491,7 @@ PHP;
             return 0;
         }
 
-        $this->line(sprintf('共 %d 条路由', count($routes)));
+        $this->line(sprintf('共 %d 条路由%s', count($routes), $domain === '' ? '' : '（域：' . $domain . '）'));
 
         foreach ($routes as $route) {
             $this->line(sprintf(
@@ -1010,7 +1025,7 @@ PHP;
         $this->line('可用命令：');
         $this->line('  new           生成项目骨架（[目录] [--force] [--domains=a,b]）');
         $this->line('  serve         启动本地开发服务器（--host= --port=）');
-        $this->line('  route:list    列出已注册路由（--json）');
+        $this->line('  route:list    列出已注册路由（--json / --domain=admin）');
         $this->line('  route:cache   导出路由缓存');
         $this->line('  route:clear   清除路由缓存');
         $this->line('  config:cache  导出配置缓存');

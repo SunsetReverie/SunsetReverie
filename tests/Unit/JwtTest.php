@@ -114,4 +114,68 @@ final class JwtTest extends TestCase
 
         $this->assertThrows(AuthenticationException::class, static fn () => $codec->decode('not-a-token'));
     }
+
+    /**
+     * 多域：A 域签发的 Token 在 B 域应被拒绝（20010）。
+     *
+     * @return void
+     */
+    public function testRejectsTokenFromAnotherDomain(): void
+    {
+        $context = new \SunsetReverie\Api\DomainContext();
+
+        $context->set(new \SunsetReverie\Api\ApiDomain('admin'));
+        $adminGuard = new \SunsetReverie\Auth\Guard\JwtGuard(new JwtCodec(self::SECRET), 3600, 'sub', $context);
+        $token = $adminGuard->issue('42');
+
+        $context->set(new \SunsetReverie\Api\ApiDomain('web'));
+        $webGuard = new \SunsetReverie\Auth\Guard\JwtGuard(new JwtCodec(self::SECRET), 3600, 'sub', $context);
+
+        $request = \SunsetReverie\Http\Request::create('GET', '/', [], '', ['Authorization' => 'Bearer ' . $token]);
+
+        $e = $this->assertThrows(
+            \SunsetReverie\Auth\Exception\AuthenticationException::class,
+            static fn () => $webGuard->user($request)
+        );
+
+        $this->assertSame(20010, $e->errorCode);
+    }
+
+    /**
+     * 多域：没有 aud 声明的 Token 同样拒绝（防"去掉 aud 绕过"）。
+     *
+     * @return void
+     */
+    public function testRejectsTokenWithoutAudienceInMultiDomain(): void
+    {
+        $codec = new JwtCodec(self::SECRET);
+        $token = $codec->encode(['sub' => '42']);
+
+        $context = new \SunsetReverie\Api\DomainContext();
+        $context->set(new \SunsetReverie\Api\ApiDomain('web'));
+        $guard = new \SunsetReverie\Auth\Guard\JwtGuard($codec, 3600, 'sub', $context);
+
+        $request = \SunsetReverie\Http\Request::create('GET', '/', [], '', ['Authorization' => 'Bearer ' . $token]);
+
+        $this->assertThrows(
+            \SunsetReverie\Auth\Exception\AuthenticationException::class,
+            static fn () => $guard->user($request)
+        );
+    }
+
+    /**
+     * 单域（无域上下文）不校验 aud，向后兼容。
+     *
+     * @return void
+     */
+    public function testSingleDomainSkipsAudienceCheck(): void
+    {
+        $codec = new JwtCodec(self::SECRET);
+        $token = $codec->encode(['sub' => '42']);
+        $guard = new \SunsetReverie\Auth\Guard\JwtGuard($codec);
+
+        $request = \SunsetReverie\Http\Request::create('GET', '/', [], '', ['Authorization' => 'Bearer ' . $token]);
+
+        $this->assertSame('42', $guard->user($request)->id);
+    }
 }

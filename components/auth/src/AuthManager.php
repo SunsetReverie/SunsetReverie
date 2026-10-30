@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SunsetReverie\Auth;
 
 use Closure;
+use SunsetReverie\Api\DomainContext;
 use SunsetReverie\Auth\Exception\AuthenticationException;
 use SunsetReverie\Auth\Guard\JwtGuard;
 use SunsetReverie\Auth\Jwt\JwtCodec;
@@ -22,9 +23,12 @@ final class AuthManager
 
     /**
      * @param array<string, mixed> $config 认证配置（default + guards）
+     * @param DomainContext|null $domainContext 域上下文（多域时校验 aud）
      */
-    public function __construct(private readonly array $config)
-    {
+    public function __construct(
+        private readonly array $config,
+        private readonly ?DomainContext $domainContext = null,
+    ) {
     }
 
     /**
@@ -117,6 +121,8 @@ final class AuthManager
             new JwtCodec((string) ($config['secret'] ?? ''), (int) ($config['leeway'] ?? 30)),
             (int) ($config['ttl'] ?? 7200),
             (string) ($config['claim_key'] ?? 'sub'),
+            $this->domainContext,
+            (bool) ($config['enforce_audience'] ?? true),
         );
     }
 }

@@ -22,6 +22,7 @@ enum ErrorCode: int
     case TokenExpired = 20002;
     case Forbidden = 20003;
     case TooManyRequests = 20005;
+    case TokenDomainMismatch = 20010;
     case SignedUrlExpired = 20011;
 
     case ValidationFailed = 30001;
@@ -50,6 +51,7 @@ enum ErrorCode: int
             self::TokenExpired => 401,
             self::Forbidden => 403,
             self::TooManyRequests => 429,
+            self::TokenDomainMismatch => 401,
             self::SignedUrlExpired => 403,
             self::NotFound => 404,
             self::ValidationFailed => 422,
@@ -78,6 +80,7 @@ enum ErrorCode: int
             self::TokenExpired => '登录已过期，请重新登录',
             self::Forbidden => '无权限执行此操作',
             self::TooManyRequests => '请求过于频繁，请稍后再试',
+            self::TokenDomainMismatch => '凭证与当前接口域不匹配',
             self::SignedUrlExpired => '链接已失效，请重新获取',
             self::NotFound => '资源不存在',
             self::ValidationFailed => '参数校验失败',
@@ -106,6 +109,7 @@ enum ErrorCode: int
             self::TokenExpired => 'SR.AUTH.TOKEN_EXPIRED',
             self::Forbidden => 'SR.AUTH.FORBIDDEN',
             self::TooManyRequests => 'SR.AUTH.TOO_MANY_REQUESTS',
+            self::TokenDomainMismatch => 'SR.AUTH.TOKEN_DOMAIN_MISMATCH',
             self::SignedUrlExpired => 'SR.AUTH.SIGNED_URL_EXPIRED',
             self::NotFound => 'SR.RESOURCE.NOT_FOUND',
             self::ValidationFailed => 'SR.VALIDATION.FAILED',

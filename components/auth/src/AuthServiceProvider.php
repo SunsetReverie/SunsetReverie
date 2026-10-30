@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SunsetReverie\Auth;
 
+use SunsetReverie\Api\DomainContext;
 use SunsetReverie\Config\Config;
 use SunsetReverie\Container\Container;
 use SunsetReverie\Foundation\ServiceProvider;
@@ -24,7 +25,10 @@ final class AuthServiceProvider extends ServiceProvider
             /** @var Config $config */
             $config = $container->get(Config::class);
 
-            return new AuthManager((array) $config->get('auth', []));
+            return new AuthManager(
+                (array) $config->get('auth', []),
+                $container->get(DomainContext::class),
+            );
         });
 
         $this->container->bind('auth', AuthManager::class);

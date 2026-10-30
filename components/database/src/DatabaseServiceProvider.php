@@ -35,5 +35,13 @@ final class DatabaseServiceProvider extends ServiceProvider
 
         // 别名：注入 ConnectionManager 与 DB 均可
         $this->container->bind('db', ConnectionManager::class);
+
+        // 默认连接：让 DB 门面、以及"构造函数里直接要 Connection"的领域服务都能自动解析
+        $this->container->bind(Connection::class, static function (Container $container): Connection {
+            /** @var ConnectionManager $manager */
+            $manager = $container->get(ConnectionManager::class);
+
+            return $manager->connection();
+        });
     }
 }

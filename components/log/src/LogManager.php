@@ -72,6 +72,18 @@ final class LogManager
     }
 
     /**
+     * 未定义的方法转发到默认通道（供 Log 门面使用）。
+     *
+     * @param string $method 方法名
+     * @param array<int, mixed> $arguments 参数
+     * @return mixed 调用结果
+     */
+    public function __call(string $method, array $arguments): mixed
+    {
+        return $this->channel()->{$method}(...$arguments);
+    }
+
+    /**
      * 注册现成的 Logger（测试或自定义通道使用）。
      *
      * @param string $name 通道名

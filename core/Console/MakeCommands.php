@@ -346,11 +346,11 @@ final class MakeCommands
 
         $routes = "<?php\n\ndeclare(strict_types=1);\n\n"
             . "use App\\Api\\{$studly}\\Controller\\HomeController;\n"
-            . "use SunsetReverie\\Routing\\Router;\n\n"
+            . "use SunsetReverie\\Support\\Facades\\Route;\n\n"
             . "/**\n * {$slug} 域路由入口（域前缀 /{$slug} 与域名前缀 {$slug}. 由框架自动套用）。\n */\n"
-            . "return function (Router \$router): void {\n"
-            . "    \$router->group(['prefix' => 'v1', 'as' => 'v1.'], static function (Router \$r): void {\n"
-            . "        \$r->get('/hello', [HomeController::class, 'index'], 'hello');\n"
+            . "return function (): void {\n"
+            . "    Route::group(['prefix' => 'v1', 'as' => 'v1.'], static function (): void {\n"
+            . "        Route::get('/hello', [HomeController::class, 'index'], 'hello');\n"
             . "    });\n};\n";
 
         $code = $this->write($controllerFile, $controller, null, null);

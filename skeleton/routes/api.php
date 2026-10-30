@@ -5,13 +5,14 @@ declare(strict_types=1);
 /*
  * 路由定义。
  *
- * 文件返回一个闭包，由框架在启动时调用并注入 Router 实例——
- * 不使用全局门面，避免隐式全局状态。
+ * 两种写法等价，可混用：
+ *   1. 门面：Route::get('/x', ...)         —— 与文档示例一致
+ *   2. 注入：$router->get('/x', ...)       —— 依赖显式，便于单测
  */
 
 use App\Controller\HomeController;
-use SunsetReverie\Routing\Router;
+use SunsetReverie\Support\Facades\Route;
 
-return function (Router $router): void {
-    $router->get('/', [HomeController::class, 'index'], 'home');
+return function (): void {
+    Route::get('/', [HomeController::class, 'index'], 'home');
 };

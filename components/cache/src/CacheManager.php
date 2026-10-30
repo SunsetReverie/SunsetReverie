@@ -91,6 +91,18 @@ final class CacheManager
      * @return self 当前实例
      * @throws CacheException 同名驱动已注册时抛出
      */
+    /**
+     * 未定义的方法转发到默认驱动（供 Cache 门面使用）。
+     *
+     * @param string $method 方法名
+     * @param array<int, mixed> $arguments 参数
+     * @return mixed 调用结果
+     */
+    public function __call(string $method, array $arguments): mixed
+    {
+        return $this->store()->{$method}(...$arguments);
+    }
+
     public function extend(string $driver, Closure $factory): self
     {
         if (isset($this->extensions[$driver])) {

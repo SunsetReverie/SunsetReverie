@@ -38,6 +38,7 @@ use SunsetReverie\Log\Middleware\LogRequest;
 use SunsetReverie\Log\LogServiceProvider;
 use SunsetReverie\Http\Response;
 use SunsetReverie\RateLimit\RateLimitServiceProvider;
+use SunsetReverie\Support\Facade;
 use SunsetReverie\Routing\Router;
 use SunsetReverie\Upload\Controller\FileController;
 use SunsetReverie\Upload\UploadManager;
@@ -57,7 +58,7 @@ use SunsetReverie\Validation\Validator;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.18.0';
+    public const VERSION = '0.19.0';
 
     private static ?self $instance = null;
 
@@ -138,6 +139,8 @@ final class Application
      */
     public static function reset(): void
     {
+        Facade::clearContainer();
+
         self::$instance = null;
     }
 
@@ -406,8 +409,8 @@ final class Application
         $this->registerAppNamespace();
         $this->loadConfiguration();
         $this->loadDomainRegistry();
-        $this->loadRoutes();
 
+        // 先绑定基础设施：路由文件里可能直接写 Route::get() / DB::table()
         $this->container->instance(self::class, $this);
         $this->container->instance(Container::class, $this->container);
         $this->container->instance(Router::class, $this->router);
@@ -422,9 +425,14 @@ final class Application
             ),
         );
 
+        // 门面在此挂载：早于 Provider 与路由加载，让配置文件之外的地方都能用静态调用
+        Facade::setContainer($this->container);
+
+        $this->registerProviders();
+        $this->loadRoutes();
+
         $this->errorHandler = new ErrorHandler($this->isDebug());
         $this->globalMiddleware = $this->resolveGlobalMiddleware();
-        $this->registerProviders();
     }
 
     /**

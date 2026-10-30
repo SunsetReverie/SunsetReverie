@@ -105,6 +105,19 @@ final class Connection
      * @return int 受影响行数
      * @throws QueryException 执行失败时抛出
      */
+    /**
+     * 执行写语句（`affect()` 的别名，对应文档里的 `DB::statement()`）。
+     *
+     * @param string $sql SQL
+     * @param array<int, mixed> $bindings 绑定值
+     * @return int 受影响行数
+     * @throws QueryException 执行失败时抛出
+     */
+    public function statement(string $sql, array $bindings = []): int
+    {
+        return $this->affect($sql, $bindings);
+    }
+
     public function affect(string $sql, array $bindings = []): int
     {
         return $this->run($sql, $bindings)->rowCount();

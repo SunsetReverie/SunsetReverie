@@ -20,8 +20,16 @@ final class ArchitectureChecker
     /** 允许的顶层命名空间前缀 */
     private const ALLOWED_ROOTS = ['SunsetReverie\\'];
 
-    /** 允许引用组件的内核文件（组装层） */
+    /**
+     * 允许引用组件的内核文件 / 目录（组装层）。
+     *
+     * - Application：负责注册 Provider，必然要知道组件类
+     * - Support/Facades：门面的职责就是声明"静态调用解析到哪个容器标识"，
+     *   本质上与组装层同性质；若改成字符串键，反而失去了类型检查与 IDE 跳转
+     */
     private const ASSEMBLY_FILES = ['core/Foundation/Application.php'];
+
+    private const ASSEMBLY_PREFIXES = ['core/Support/Facades/'];
 
     /**
      * 允许的组件间依赖（显式声明，附理由；未声明的依赖一律视为违规）。
@@ -162,7 +170,7 @@ final class ArchitectureChecker
         $violations = [];
 
         foreach ($this->sourceFiles('core') as $relative => $file) {
-            if (in_array($relative, self::ASSEMBLY_FILES, true)) {
+            if ($this->isAssemblyLayer($relative)) {
                 continue;
             }
 
@@ -178,7 +186,7 @@ final class ArchitectureChecker
         return [
             'id' => 'ARCH-4',
             'ok' => $violations === [],
-            'summary' => '内核仅组装层依赖组件',
+            'summary' => '内核仅组装层（Application / Facades）依赖组件',
             'violations' => $violations,
         ];
     }
@@ -300,6 +308,27 @@ final class ArchitectureChecker
     {
         foreach (self::ALLOWED_ROOTS as $root) {
             if (str_starts_with($use, $root)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * 是否为组装层文件。
+     *
+     * @param string $relative 相对路径
+     * @return bool 是组装层返回 true
+     */
+    private function isAssemblyLayer(string $relative): bool
+    {
+        if (in_array($relative, self::ASSEMBLY_FILES, true)) {
+            return true;
+        }
+
+        foreach (self::ASSEMBLY_PREFIXES as $prefix) {
+            if (str_starts_with($relative, $prefix)) {
                 return true;
             }
         }

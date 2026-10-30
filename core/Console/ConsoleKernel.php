@@ -54,6 +54,13 @@ final class ConsoleKernel
             'migrate:fresh' => $this->migrateFresh($args),
             'db:show' => $this->dbShow($args),
             'route:mode' => $this->routeMode($args),
+            'schedule:run' => $this->scheduleRun(),
+            'schedule:list' => $this->scheduleList(),
+            'queue:work' => $this->queueWork($args),
+            'queue:size' => $this->queueSize($args),
+            'queue:clear' => $this->queueClear($args),
+            'queue:failed' => $this->queueFailed(),
+            'queue:retry' => $this->queueRetry($args),
             'make:migration' => $this->makeMigration($args),
             'make:controller', 'make:model', 'make:middleware', 'make:request',
             'make:seeder', 'make:domain' => $this->make($command, $args),
@@ -1333,6 +1340,364 @@ PHP;
     }
 
     /**
+     * 取队列驱动，失败时给出可操作提示。
+     *
+     * database 驱动依赖数据库；框架仓库自身没有 config/database.php，
+     * 直接抛异常会让人摸不着头脑（"未找到数据库连接配置 [mysql]"）。
+     *
+     * @return \SunsetReverie\Queue\Driver\QueueDriverInterface|null 驱动，不可用时 null
+     */
+    private function queueDriver(): ?\SunsetReverie\Queue\Driver\QueueDriverInterface
+    {
+        try {
+            return $this->app->queue()->driver();
+        } catch (\Throwable $e) {
+            $this->error('队列不可用：' . $e->getMessage());
+            $this->line('');
+            $this->line('database 驱动需要先完成两件事：');
+            $this->line('  1. 在 config/database.php 中配置连接');
+            $this->line('  2. 执行 sr migrate 建 jobs / failed_jobs 表');
+            $this->line('（或把 queue.driver 改为 sync 仅作本地调试）');
+
+            return null;
+        }
+    }
+
+    /**
+     * queue:work：消费队列。
+     *
+     * 两种模式：
+     * - `--once`：处理到队列为空就退出，适合 cron 驱动（每分钟跑一次）
+     * - 不带 `--once`：常驻循环，适合 supervisor 守护
+     *
+     * @param list<string> $args 参数
+     * @return int 退出码
+     */
+    private function queueWork(array $args): int
+    {
+        $queue = $this->optionValue($args, 'queue', '') ?: $this->app->queue()->defaultQueue();
+        $once = in_array('--once', $args, true);
+        $max = (int) ($this->optionValue($args, 'max', '0') ?: 0);
+
+        $driver = $this->queueDriver();
+
+        if ($driver === null) {
+            return 1;
+        }
+
+        $worker = new \SunsetReverie\Queue\Worker($driver, $queue);
+
+        if ($once) {
+            $log = $worker->workUntilEmpty($max);
+
+            if ($log === []) {
+                $this->line(sprintf('队列 [%s] 为空', $queue));
+
+                return 0;
+            }
+
+            foreach ($log as $line) {
+                $this->line('  ' . $line);
+            }
+
+            $this->line('');
+            $this->line(sprintf('处理完成：%d 个任务', count($log)));
+
+            return 0;
+        }
+
+        $this->line(sprintf('开始消费队列 [%s]（Ctrl+C 退出）', $queue));
+        $handled = 0;
+
+        while (true) {
+            $result = $worker->processOne();
+
+            if ($result === null) {
+                sleep(1);
+
+                continue;
+            }
+
+            $this->line('  ' . $result);
+            $handled++;
+
+            if ($max > 0 && $handled >= $max) {
+                break;
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * queue:size：队列长度。
+     *
+     * @param list<string> $args 参数
+     * @return int 退出码
+     */
+    private function queueSize(array $args): int
+    {
+        $queue = $this->optionValue($args, 'queue', '') ?: $this->app->queue()->defaultQueue();
+
+        $driver = $this->queueDriver();
+
+        if ($driver === null) {
+            return 1;
+        }
+
+        $this->line(sprintf('队列 [%s]：%d 个待处理任务', $queue, $driver->size($queue)));
+
+        return 0;
+    }
+
+    /**
+     * queue:clear：清空队列（不含死信）。
+     *
+     * @param list<string> $args 参数
+     * @return int 退出码
+     */
+    private function queueClear(array $args): int
+    {
+        $queue = $this->optionValue($args, 'queue', '') ?: $this->app->queue()->defaultQueue();
+        $driver = $this->queueDriver();
+
+        if ($driver === null) {
+            return 1;
+        }
+
+        $deleted = $driver->clear($queue);
+
+        $this->line(sprintf('队列 [%s] 已清空：%d 个任务', $queue, $deleted));
+
+        return 0;
+    }
+
+    /**
+     * queue:failed：查看死信。
+     *
+     * @return int 退出码
+     */
+    private function queueFailed(): int
+    {
+        $driver = $this->queueDriver();
+
+        if (!$driver instanceof \SunsetReverie\Queue\Driver\DatabaseDriver) {
+            $this->error('只有 database 驱动有死信表');
+
+            return 1;
+        }
+
+        $rows = $driver->failed(20);
+
+        if ($rows === []) {
+            $this->line('没有死信任务');
+
+            return 0;
+        }
+
+        $this->line('死信任务');
+        $this->line('');
+
+        foreach ($rows as $row) {
+            $payload = json_decode((string) $row['payload'], true);
+            $class = is_array($payload) ? (string) ($payload['class'] ?? '?') : '?';
+
+            $this->line(sprintf('  #%s  %s', (string) $row['id'], $class));
+            $this->line(sprintf('      队列：%s  时间：%s', (string) $row['queue'], (string) $row['failed_at']));
+            $this->line(sprintf('      原因：%s', (string) $row['exception']));
+            $this->line('');
+        }
+
+        return 0;
+    }
+
+    /**
+     * queue:retry：死信重新入队。
+     *
+     * @param list<string> $args 参数
+     * @return int 退出码
+     */
+    private function queueRetry(array $args): int
+    {
+        $driver = $this->queueDriver();
+
+        if (!$driver instanceof \SunsetReverie\Queue\Driver\DatabaseDriver) {
+            $this->error('只有 database 驱动支持重试');
+
+            return 1;
+        }
+
+        if (in_array('--all', $args, true)) {
+            $count = 0;
+
+            foreach ($driver->failed(500) as $row) {
+                if ($driver->retryFailed((string) $row['id'])) {
+                    $count++;
+                }
+            }
+
+            $this->line(sprintf('已重新入队：%d 个任务', $count));
+
+            return 0;
+        }
+
+        $id = $this->firstArgument($args);
+
+        if ($id === null) {
+            $this->error('用法：sr queue:retry {id} 或 sr queue:retry --all');
+
+            return 2;
+        }
+
+        if (!$driver->retryFailed($id)) {
+            $this->error(sprintf('死信任务 #%s 不存在或载荷损坏', $id));
+
+            return 1;
+        }
+
+        $this->line(sprintf('死信任务 #%s 已重新入队', $id));
+
+        return 0;
+    }
+
+    /**
+     * schedule:run：执行本分钟到期的任务。
+     *
+     * 由系统 cron 每分钟调用一次：
+     *
+     *   * * * * * cd /path/to/project && php bin/sr schedule:run >> /dev/null 2>&1
+     *
+     * 两道锁都必要：
+     * - 分钟级 guard：cron 抖动或手工重复执行时，同一分钟不跑第二次
+     * - 任务级 lock：某个任务跑得比间隔还慢时，不叠加重入
+     *
+     * @return int 退出码（有任务失败返回 1）
+     */
+    private function scheduleRun(): int
+    {
+        $now = new \DateTimeImmutable();
+        $tasks = $this->loadSchedule();
+        $due = [];
+
+        foreach ($tasks as $task) {
+            if (Schedule::isDue($task, $now)) {
+                $due[] = $task;
+            }
+        }
+
+        if ($due === []) {
+            $this->line(sprintf('[%s] 本分钟无到期任务', $now->format('Y-m-d H:i:s')));
+
+            return 0;
+        }
+
+        /** @var \SunsetReverie\Cache\CacheStoreInterface $cache */
+        $cache = $this->app->cache();
+
+        // 分钟级防重
+        $guard = 'schedule:guard:' . $now->format('YmdHi');
+
+        if ($cache->has($guard)) {
+            $this->line('本分钟已执行过，跳过');
+
+            return 0;
+        }
+
+        $cache->put($guard, 1, 120);
+
+        $failed = 0;
+
+        foreach ($due as $task) {
+            $lockKey = 'schedule:lock:' . $task['name'];
+
+            // 任务级防重入：上一轮还没跑完就不再叠加
+            if ($cache->has($lockKey)) {
+                $this->line(sprintf('  - %-34s 跳过（上次仍在执行）', $task['name']));
+
+                continue;
+            }
+
+            $cache->put($lockKey, 1, 300);
+            $started = microtime(true);
+
+            try {
+                ($task['callback'])();
+                $this->line(sprintf(
+                    '  ✓ %-34s %7.1f ms',
+                    $task['name'],
+                    (microtime(true) - $started) * 1000
+                ));
+            } catch (\Throwable $e) {
+                $failed++;
+                $this->error(sprintf('  ✗ %-34s %s', $task['name'], $e->getMessage()));
+            } finally {
+                $cache->forget($lockKey);
+            }
+        }
+
+        $this->line('');
+        $this->line($failed === 0 ? '全部执行完成' : sprintf('%d 个任务失败', $failed));
+
+        return $failed === 0 ? 0 : 1;
+    }
+
+    /**
+     * schedule:list：列出全部定时任务。
+     *
+     * @return int 退出码
+     */
+    private function scheduleList(): int
+    {
+        $tasks = $this->loadSchedule();
+
+        if ($tasks === []) {
+            $this->line('未注册任何定时任务（在 app/Console/Schedule.php 中注册）');
+
+            return 0;
+        }
+
+        $now = new \DateTimeImmutable();
+
+        $this->line('定时任务');
+        $this->line(sprintf('  当前时间：%s', $now->format('Y-m-d H:i:s')));
+        $this->line('');
+
+        foreach ($tasks as $task) {
+            $this->line(sprintf(
+                '  %-34s %-14s %s',
+                $task['name'],
+                $task['cron'],
+                Schedule::isDue($task, $now) ? '本分钟到期' : ''
+            ));
+        }
+
+        return 0;
+    }
+
+    /**
+     * 加载业务侧的任务注册文件。
+     *
+     * @return list<array{name: string, cron: string, callback: \Closure}> 任务列表
+     */
+    private function loadSchedule(): array
+    {
+        $file = $this->app->basePath('app/Console/Schedule.php');
+
+        if (!is_file($file)) {
+            return [];
+        }
+
+        $registrar = require $file;
+        $schedule = new Schedule();
+
+        if (is_callable($registrar)) {
+            $registrar($schedule);
+        }
+
+        return $schedule->tasks();
+    }
+
+    /**
      * route:mode：切换路由组织模式。
      *
      * @param list<string> $args 参数（single|directory，--dry-run）
@@ -1518,6 +1883,13 @@ PHP;
         $this->line('  migrate:fresh 重建全部表（需 --force）');
         $this->line('  db:show       连接信息与表概览');
         $this->line('  route:mode    切换路由模式（single|directory，--dry-run）');
+        $this->line('  schedule:run  执行到期任务（cron 每分钟调一次）');
+        $this->line('  schedule:list 列出定时任务与下次执行');
+        $this->line('  queue:work    消费队列（--once 处理到空，--max=N）');
+        $this->line('  queue:size    队列长度');
+        $this->line('  queue:clear   清空队列（不含死信）');
+        $this->line('  queue:failed  查看死信');
+        $this->line('  queue:retry   死信重新入队（--all 全部）');
         $this->line('  make:migration {name}        生成迁移文件');
         $this->line('  make:controller {Domain/Name} 生成域控制器');
         $this->line('  make:model {Name}            生成领域服务（app/Domain/）');

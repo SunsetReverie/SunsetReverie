@@ -8,6 +8,36 @@
 
 - 待办见文档 18.3.0「当前验收状态」的缺口列表
 
+## [0.32.0] - 2026-10-30
+
+### 新增
+
+- **队列组件**（`components/queue`）：零外部依赖的 database 驱动
+
+为「评论邮件通知」「注册验证码」这类**外部依赖且耗时**的操作提供异步与重试。
+SMTP 发送可能要 1–3 秒、超时长达 30 秒，同步发就会把接口卡死。
+
+| 部件 | 职责 |
+| --- | --- |
+| `Job` | 任务接口：handle / failed / tries / backoff |
+| `DatabaseDriver` | 任务存表，令牌抢占 |
+| `SyncDriver` | 入队即执行，仅测试与本地调试 |
+| `Worker` | 取任务 → 执行 → 成功删除 / 失败释放 / 耗尽进死信 |
+
+**原子抢占**用「令牌抢占」而非 `SELECT ... FOR UPDATE`，不需要长事务。
+三种数据库支持方式不同，必须分支：
+
+- MySQL：`UPDATE ... ORDER BY id LIMIT 1`
+- SQLite：派生表子查询（默认未编译 `SQLITE_ENABLE_UPDATE_DELETE_LIMIT`）
+- PostgreSQL：子查询 + `FOR UPDATE SKIP LOCKED`
+
+### 其他
+
+- 抢占租约 300 秒：worker 崩溃后任务不会永久卡住
+- 死信表 `failed_jobs`，支持重新入队
+- 5 个命令：`queue:work`（`--once` / `--max=N`）、`queue:size`、`queue:clear`、`queue:failed`、`queue:retry`
+- 队列不可用（未配数据库）时给出可操作提示，而不是抛原始异常
+
 ## [0.31.0] - 2026-10-30
 
 ### 新增

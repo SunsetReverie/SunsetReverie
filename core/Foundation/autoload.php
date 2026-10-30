@@ -101,7 +101,12 @@ $sunsetLoader = new Autoloader();
 // 内核：SunsetReverie\Foo\Bar → core/Foo/Bar.php
 $sunsetLoader->addNamespace('SunsetReverie\\', $sunsetBasePath . '/core');
 
-// 官方组件：SunsetReverie\Cache\Foo → components/cache/src/Foo.php
+/*
+ * 官方组件：SunsetReverie\Cache\Foo → components/cache/src/Foo.php
+ *
+ * 目录名与命名空间不总是同形（ratelimit → RateLimit），无法可靠地自动推断，
+ * 因此新增组件需要在此登记一行。
+ */
 $sunsetComponents = [
     'Database' => 'database',
     'Cache' => 'cache',
@@ -111,6 +116,7 @@ $sunsetComponents = [
     'Upload' => 'upload',
     'Console' => 'console',
     'RateLimit' => 'ratelimit',
+    'Queue' => 'queue',
 ];
 
 foreach ($sunsetComponents as $namespace => $directory) {

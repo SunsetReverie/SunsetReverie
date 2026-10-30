@@ -37,7 +37,10 @@ final class ArchitectureChecker
      * ratelimit → cache：限流计数器必须落在共享存储上，复用缓存驱动而非自造一套。
      */
     private const ALLOWED_COMPONENT_DEPS = [
+        // 限流计数器必须落在共享存储上，复用缓存驱动而非自造一套
         'ratelimit' => ['cache'],
+        // database 驱动的队列就是把任务存进数据库表，离不开连接
+        'queue' => ['database'],
     ];
 
     /** @var list<string> 组件名（由 components/ 目录扫描得到） */

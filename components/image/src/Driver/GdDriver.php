@@ -106,7 +106,16 @@ final class GdDriver implements ImageDriverInterface
 
         $width = imagesx($image);
         $height = imagesy($image);
-        $target ??= tempnam(sys_get_temp_dir(), 'sr-img-');
+        // tempnam 失败会返回 false，直接传给 ImageResult(string $path) 会 TypeError
+        if ($target === null) {
+            $temp = tempnam(sys_get_temp_dir(), 'sr-img-');
+
+            if ($temp === false) {
+                throw new ImageException('无法创建临时文件');
+            }
+
+            $target = $temp;
+        }
 
         $this->encode($image, $target, $format, $quality);
 

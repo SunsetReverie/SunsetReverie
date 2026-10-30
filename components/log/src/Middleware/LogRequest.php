@@ -57,6 +57,7 @@ final class LogRequest implements MiddlewareInterface
             'method' => $request->method,
             'path' => $request->path,
             'route' => (string) $request->attribute('route.name', ''),
+            'domain' => (string) $request->attribute('api.domain', ''),
         ]);
 
         try {

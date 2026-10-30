@@ -130,6 +130,16 @@ final class Request
     }
 
     /**
+     * 获取请求 Host（含端口时保留）。
+     *
+     * @return string 主机名
+     */
+    public function host(): string
+    {
+        return (string) ($this->headers['host'] ?? $this->server['HTTP_HOST'] ?? '');
+    }
+
+    /**
      * 读取请求头（大小写不敏感）。
      *
      * @param string $name 头名称

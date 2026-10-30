@@ -62,12 +62,6 @@ final class ConsoleKernel
      */
     private function new(array $args): int
     {
-        if ($this->hasOption($args, 'domains')) {
-            $this->error('多域骨架尚未实现（计划 v0.5），当前请使用单域骨架');
-
-            return 1;
-        }
-
         $skeleton = $this->app->basePath('skeleton');
 
         if (!is_dir($skeleton)) {
@@ -102,6 +96,20 @@ final class ConsoleKernel
         $this->writeEnvFile($target);
         $this->writeBinShim($target, $frameworkRelative);
 
+        $domains = $this->parseDomains((string) $this->optionValue($args, 'domains', ''));
+
+        if ($domains !== null) {
+            if ($domains === []) {
+                $this->error('--domains 需要至少一个域名，例如 --domains=admin,web');
+
+                return 2;
+            }
+
+            $generated = $this->generateDomainSkeleton($target, $name, $domains);
+            $this->line(sprintf('已生成 %d 个 API 域：%s', count($domains), implode(', ', $domains)));
+            $this->line(sprintf('  域入口 %d 个、示例控制器 %d 个', $generated, $generated));
+        }
+
         $this->line('项目已生成：' . $target);
         $this->line(sprintf('  骨架文件 %d 个（已跳过 .git / vendor / 框架目录）', $copied));
         $this->line('');
@@ -111,6 +119,119 @@ final class ConsoleKernel
         $this->line('  3) 访问 http://127.0.0.1:8000/');
 
         return 0;
+    }
+
+    /**
+     * 解析 --domains 参数。
+     *
+     * @param string $value 原始值（如 admin,web）
+     * @return list<string>|null 域名列表；未传该参数返回 null
+     * @throws \RuntimeException 域名非法时抛出
+     */
+    private function parseDomains(string $value): ?array
+    {
+        if ($value === '') {
+            return null;
+        }
+
+        $domains = [];
+
+        foreach (explode(',', $value) as $item) {
+            $domain = trim($item);
+
+            if ($domain === '') {
+                continue;
+            }
+
+            if (preg_match('/^[a-z][a-z0-9-]{1,30}$/', $domain) !== 1) {
+                throw new \RuntimeException(sprintf(
+                    '非法域名 [%s]：只能包含小写字母、数字与短横线，且以字母开头',
+                    $domain
+                ));
+            }
+
+            $domains[] = $domain;
+        }
+
+        return array_values(array_unique($domains));
+    }
+
+    /**
+     * 生成多域骨架：config/api.php + routes/{domain}.php + 示例控制器。
+     *
+     * @param string $target 项目目录
+     * @param string $appName 项目名
+     * @param list<string> $domains 域名列表
+     * @return int 生成的域入口数量
+     */
+    private function generateDomainSkeleton(string $target, string $appName, array $domains): int
+    {
+        // 单域入口与多域并存会让人分不清，直接移除
+        @unlink($target . '/routes/api.php');
+
+        $definitions = [];
+
+        foreach ($domains as $index => $domain) {
+            $definitions[] = sprintf(
+                "        '%s' => [\n            'prefix' => '%s',\n            'versions' => ['v1'],\n            'error_segment' => %d,\n        ],",
+                $domain,
+                $domain,
+                51 + $index
+            );
+        }
+
+        $apiConfig = "<?php\n\ndeclare(strict_types=1);\n\n"
+            . "/*\n * API 域配置（由 sr new --domains 生成）。\n *\n"
+            . " * 每个域一个入口文件 routes/{domain}.php；\n"
+            . " * 域前缀、域名前缀与中间件由框架自动套用，入口文件里只写版本分组与资源路由。\n */\n\n"
+            . "return [\n"
+            . "    'default' => '" . $domains[0] . "',\n"
+            . "    'allow_header_detection' => false,\n"
+            . "    'routing_mode' => 'single',\n"
+            . "    'domains' => [\n"
+            . implode("\n", $definitions) . "\n"
+            . "    ],\n];\n";
+
+        file_put_contents($target . '/config/api.php', $apiConfig);
+
+        foreach ($domains as $domain) {
+            $studly = ucfirst(str_replace('-', '', $domain));
+
+            $routeFile = "<?php\n\ndeclare(strict_types=1);\n\n"
+                . "use App\\Api\\{$studly}\\Controller\\HomeController;\n"
+                . "use SunsetReverie\\Routing\\Router;\n\n"
+                . "/*\n * {$domain} 域路由入口。\n *\n"
+                . " * 域前缀（/{$domain}）与域名前缀（{$domain}.）已由框架套用，此处只写版本分组。\n */\n"
+                . "return function (Router \$router): void {\n"
+                . "    \$router->group(['prefix' => 'v1', 'as' => 'v1.'], static function (Router \$r): void {\n"
+                . "        \$r->get('/hello', [HomeController::class, 'index'], 'hello');\n"
+                . "    });\n};\n";
+
+            if (!is_dir($target . '/routes')) {
+                @mkdir($target . '/routes', 0755, true);
+            }
+
+            file_put_contents($target . '/routes/' . $domain . '.php', $routeFile);
+
+            $controllerDir = $target . '/app/Api/' . $studly . '/Controller';
+
+            if (!is_dir($controllerDir)) {
+                @mkdir($controllerDir, 0755, true);
+            }
+
+            $controller = "<?php\n\ndeclare(strict_types=1);\n\n"
+                . "namespace App\\Api\\{$studly}\\Controller;\n\n"
+                . "use SunsetReverie\\Http\\Request;\n\n"
+                . "/**\n * {$domain} 域示例控制器。\n */\n"
+                . "final class HomeController\n{\n"
+                . "    /**\n     * 示例接口。\n     *\n     * @param Request \$request 当前请求\n     * @return array<string, mixed> 响应数据\n     */\n"
+                . "    public function index(Request \$request): array\n    {\n"
+                . "        return ['domain' => '{$domain}', 'app' => '{$appName}'];\n    }\n}\n";
+
+            file_put_contents($controllerDir . '/HomeController.php', $controller);
+        }
+
+        return count($domains);
     }
 
     /**
@@ -661,7 +782,7 @@ PHP;
         $this->line('用法：sr <command> [options]');
         $this->line('');
         $this->line('可用命令：');
-        $this->line('  new           生成项目骨架（[目录] [--force]）');
+        $this->line('  new           生成项目骨架（[目录] [--force] [--domains=a,b]）');
         $this->line('  serve         启动本地开发服务器（--host= --port=）');
         $this->line('  route:list    列出已注册路由（--json）');
         $this->line('  route:cache   导出路由缓存');

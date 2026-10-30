@@ -12,6 +12,9 @@ use SunsetReverie\Config\Env;
 use SunsetReverie\Config\EnvLoader;
 use SunsetReverie\Auth\AuthManager;
 use SunsetReverie\Auth\AuthServiceProvider;
+use SunsetReverie\Api\DomainRegistry;
+use SunsetReverie\Api\DomainResolver;
+use SunsetReverie\Api\Middleware\ResolveDomain;
 use SunsetReverie\Cache\CacheManager;
 use SunsetReverie\Cache\CacheServiceProvider;
 use SunsetReverie\Cache\CacheStoreInterface;
@@ -53,7 +56,7 @@ use SunsetReverie\Validation\Validator;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.9.0';
+    public const VERSION = '0.10.0';
 
     private static ?self $instance = null;
 
@@ -74,6 +77,8 @@ final class Application
     private array $globalMiddleware = [];
 
     private ProviderRepository $providers;
+
+    private DomainRegistry $domains;
 
     /**
      * @param string $basePath 项目根目录
@@ -386,12 +391,21 @@ final class Application
         $this->loadEnvironment();
         $this->registerAppNamespace();
         $this->loadConfiguration();
+        $this->loadDomainRegistry();
         $this->loadRoutes();
 
         $this->container->instance(self::class, $this);
         $this->container->instance(Container::class, $this->container);
         $this->container->instance(Router::class, $this->router);
         $this->container->instance(Config::class, $this->config);
+        $this->container->instance(DomainRegistry::class, $this->domains);
+        $this->container->instance(
+            DomainResolver::class,
+            new DomainResolver(
+                $this->domains,
+                (bool) $this->config->get('api.allow_header_detection', false),
+            ),
+        );
 
         $this->errorHandler = new ErrorHandler($this->isDebug());
         $this->globalMiddleware = $this->resolveGlobalMiddleware();
@@ -478,7 +492,24 @@ final class Application
 
         // 顺序很重要：安全头在最外（保证错误响应也带头），追踪其次，CORS 最后
         // 这样预检 204 也能拿到 X-Request-Id 与安全头
-        return [SecurityHeaders::class, TraceRequest::class, LogRequest::class, HandleCors::class];
+        // 顺序：安全头最外（错误响应也带头）→ 追踪 → 域解析（日志要用）→ 日志 → CORS（预检最后短路）
+        return [
+            SecurityHeaders::class,
+            TraceRequest::class,
+            ResolveDomain::class,
+            LogRequest::class,
+            HandleCors::class,
+        ];
+    }
+
+    /**
+     * 构建域注册表（未配置 api.domains 时为空表，走单域模式）。
+     *
+     * @return void
+     */
+    private function loadDomainRegistry(): void
+    {
+        $this->domains = new DomainRegistry((array) $this->config->get('api', []));
     }
 
     /**
@@ -507,6 +538,14 @@ final class Application
      */
     private function registerFileRoutes(): void
     {
+        // 多域：每个域一个入口文件，注册时套上「域前缀 + 域中间件 + 域名前缀」
+        if (!$this->domains->isEmpty()) {
+            $this->registerDomainRoutes();
+
+            return;
+        }
+
+        // 单域：routes/api.php
         $file = $this->basePath('routes/api.php');
 
         if (!is_file($file)) {
@@ -517,6 +556,36 @@ final class Application
 
         if (is_callable($registrar)) {
             $registrar($this->router);
+        }
+    }
+
+    /**
+     * 按域加载路由文件（routes/{domain}.php）。
+     *
+     * @return void
+     */
+    private function registerDomainRoutes(): void
+    {
+        foreach ($this->domains->all() as $domain) {
+            $file = $this->basePath('routes/' . $domain->name . '.php');
+
+            if (!is_file($file)) {
+                continue;
+            }
+
+            $registrar = require $file;
+
+            if (!is_callable($registrar)) {
+                continue;
+            }
+
+            $this->router->group([
+                'prefix' => $domain->prefix,
+                'as' => $domain->name . '.',
+                'middleware' => $domain->middleware,
+            ], static function (Router $router) use ($registrar): void {
+                $registrar($router);
+            });
         }
     }
 

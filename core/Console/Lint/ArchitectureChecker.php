@@ -460,7 +460,27 @@ final class ArchitectureChecker
             $directories[] = basename($dir);
         }
 
-        $autoload = (string) file_get_contents($this->frameworkRoot . '/core/Foundation/autoload.php');
+        $autoloadPath = $this->frameworkRoot . '/core/Foundation/autoload.php';
+
+        /*
+         * 读不到就明确报违规，而不是让 file_get_contents 抛 warning：
+         * warning 会被 error_reporting 设置、SAPI、以及各种错误处理器差别对待，
+         * 有时是噪声、有时被静默吞掉。这类「配置错了」的问题应该显式说出来。
+         */
+        if (!is_file($autoloadPath)) {
+            return [
+                'id' => 'ARCH-8',
+                'ok' => false,
+                'summary' => '组件目录与 autoload 映射表一致',
+                'violations' => [sprintf(
+                    '找不到 %s，无法校验组件注册（frameworkRoot 可能配错了：%s）',
+                    $autoloadPath,
+                    $this->frameworkRoot
+                )],
+            ];
+        }
+
+        $autoload = (string) file_get_contents($autoloadPath);
 
         // 从 $sunsetComponents 数组里取 'Namespace' => 'dir'
         preg_match_all("/'([A-Za-z]+)'\s*=>\s*'([a-z]+)'/", $autoload, $matches, PREG_SET_ORDER);

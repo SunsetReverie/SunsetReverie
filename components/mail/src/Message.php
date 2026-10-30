@@ -39,7 +39,12 @@ final class Message
         }
 
         $stripped = preg_replace('/<(script|style)[^>]*>.*?<\/\1>/is', '', $this->html) ?? $this->html;
-        $stripped = str_replace(['<br>', '<br/>', '<br />', '</p>'], "\n", $stripped);
+        // 块级标签统一换成换行，否则剥离后段落会粘成一行
+        $stripped = str_replace(
+            ['<br>', '<br/>', '<br />', '</p>', '</div>', '</li>', '</blockquote>', '</h1>', '</h2>', '</h3>', '</tr>'],
+            "\n",
+            $stripped
+        );
         $stripped = strip_tags($stripped);
 
         return trim(html_entity_decode($stripped, ENT_QUOTES | ENT_HTML5, 'UTF-8'));

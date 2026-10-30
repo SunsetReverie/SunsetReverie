@@ -109,6 +109,13 @@ $sunsetLoader->addNamespace('SunsetReverie\\', $sunsetBasePath . '/core');
  *
  * 目录名与命名空间不总是同形（ratelimit → RateLimit），无法可靠地自动推断，
  * 因此新增组件需要在此登记一行。
+ *
+ * 注意：**Console 不在此列**。它是内核的一部分（core/Console/），
+ * 由上面的 `SunsetReverie\ → core` 规则加载。登记成组件会让
+ * `SunsetReverie\Console\*` 指向不存在的 components/console/，
+ * 一旦哪天有人建了那个目录，就会静默覆盖内核的映射。
+ *
+ * 这条一致性由 `sr lint:architecture` 的 ARCH-8 自动检查。
  */
 $sunsetComponents = [
     'Database' => 'database',
@@ -117,7 +124,6 @@ $sunsetComponents = [
     'Validation' => 'validation',
     'Auth' => 'auth',
     'Upload' => 'upload',
-    'Console' => 'console',
     'RateLimit' => 'ratelimit',
     'Queue' => 'queue',
     'Mail' => 'mail',

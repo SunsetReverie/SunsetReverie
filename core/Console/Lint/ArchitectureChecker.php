@@ -68,6 +68,10 @@ final class ArchitectureChecker
             $this->checkThirdPartyReferences(),
             $this->checkCrossComponentReferences(),
             $this->checkCoreDependsOnComponents(),
+            $this->checkVendorFreeBootstrap(),
+            $this->checkVendorCoexist(),
+            $this->checkFacadeAnnotations(),
+            $this->checkComponentRegistration(),
         ];
     }
 
@@ -347,6 +351,155 @@ final class ArchitectureChecker
      * @param string $use 类名
      * @return string|null 组件名
      */
+    /**
+     * ARCH-5：无 vendor/ 时核心可启动。
+     *
+     * 这项需要真正启动一次应用（无 Composer 环境下的冒烟），
+     * 与架构检查"只读文件、5 秒内完成"的约束冲突，
+     * 因此交给 tests/Feature/VendorCoexistTest 覆盖，
+     * 这里明确标 N/A 而不是假装检查过。
+     *
+     * @return array{id: string, ok: bool, summary: string, violations: list<string>} 结果
+     */
+    private function checkVendorFreeBootstrap(): array
+    {
+        return [
+            'id' => 'ARCH-5',
+            'ok' => true,
+            'summary' => 'N/A：由 tests/Feature/VendorCoexistTest 覆盖（需启动容器）',
+            'violations' => [],
+        ];
+    }
+
+    /**
+     * ARCH-6：存在 vendor/autoload.php 时加载不冲突。
+     *
+     * 同 ARCH-5，属运行期行为，由测试覆盖。
+     *
+     * @return array{id: string, ok: bool, summary: string, violations: list<string>} 结果
+     */
+    private function checkVendorCoexist(): array
+    {
+        return [
+            'id' => 'ARCH-6',
+            'ok' => true,
+            'summary' => 'N/A：由 tests/Feature/VendorCoexistTest 覆盖（两种加载顺序）',
+            'violations' => [],
+        ];
+    }
+
+    /**
+     * ARCH-7：Facade 的 @method 注解与底层类一致。
+     *
+     * 为什么值得检查：Facade 靠 `__callStatic` 转发，注解写漏了不会报错，
+     * 但 IDE 提示与静态分析会失效（`DB::statement()` 就被漏掉过一次）。
+     * 注解写了底层不存在的方法更糟——调用时才炸。
+     *
+     * @return array{id: string, ok: bool, summary: string, violations: list<string>} 结果
+     */
+    private function checkFacadeAnnotations(): array
+    {
+        $violations = [];
+        $directory = $this->frameworkRoot . '/core/Support/Facades';
+
+        foreach (glob($directory . '/*.php') ?: [] as $file) {
+            $source = (string) file_get_contents($file);
+            $facade = basename($file, '.php');
+
+            // accessor() 里 return Xxx::class;
+            if (preg_match('/return\s+([\\\w]+)::class\s*;/', $source, $m) !== 1) {
+                continue;
+            }
+
+            $accessor = ltrim($m[1], '\\');
+
+            if (!class_exists($accessor)) {
+                $violations[] = sprintf('%s: accessor 类 %s 不存在', $facade, $accessor);
+                continue;
+            }
+
+            // @method static <返回类型> <方法名>(<参数>)
+            preg_match_all('/@method\s+static\s+[^\s]+\s+(\w+)\(/', $source, $methods);
+
+            foreach (array_unique($methods[1] ?? []) as $method) {
+                if (!method_exists($accessor, $method)) {
+                    $violations[] = sprintf(
+                        '%s: 注解声明了 %s()，但 %s 没有该方法',
+                        $facade,
+                        $method,
+                        $accessor
+                    );
+                }
+            }
+        }
+
+        return [
+            'id' => 'ARCH-7',
+            'ok' => $violations === [],
+            'summary' => 'Facade @method 注解与底层类一致',
+            'violations' => $violations,
+        ];
+    }
+
+    /**
+     * ARCH-8：组件目录与 autoload 映射表一致。
+     *
+     * 踩过三次的坑：新增组件时忘了在 autoload.php 的 $sunsetComponents 里登记，
+     * 运行期表现为"类找不到"，而报错信息完全指不到真正原因。
+     *
+     * @return array{id: string, ok: bool, summary: string, violations: list<string>} 结果
+     */
+    private function checkComponentRegistration(): array
+    {
+        $violations = [];
+        $componentsDir = $this->frameworkRoot . '/components';
+
+        $directories = [];
+
+        foreach (glob($componentsDir . '/*', GLOB_ONLYDIR) ?: [] as $dir) {
+            $directories[] = basename($dir);
+        }
+
+        $autoload = (string) file_get_contents($this->frameworkRoot . '/core/Foundation/autoload.php');
+
+        // 从 $sunsetComponents 数组里取 'Namespace' => 'dir'
+        preg_match_all("/'([A-Za-z]+)'\s*=>\s*'([a-z]+)'/", $autoload, $matches, PREG_SET_ORDER);
+
+        $registered = [];
+
+        foreach ($matches as $match) {
+            $registered[$match[2]] = $match[1];
+        }
+
+        // 有目录但没登记
+        foreach ($directories as $dir) {
+            if (!isset($registered[$dir])) {
+                $violations[] = sprintf(
+                    'components/%s 存在，但 autoload.php 的 $sunsetComponents 未登记',
+                    $dir
+                );
+            }
+        }
+
+        // 登记了但目录不存在
+        foreach ($registered as $dir => $namespace) {
+            if (!is_dir($componentsDir . '/' . $dir)) {
+                $violations[] = sprintf(
+                    'autoload.php 登记了 %s => components/%s，但该目录不存在',
+                    $namespace,
+                    $dir
+                );
+            }
+        }
+
+        return [
+            'id' => 'ARCH-8',
+            'ok' => $violations === [],
+            'summary' => '组件目录与 autoload 映射表一致',
+            'violations' => $violations,
+        ];
+    }
+
     private function componentOf(string $use): ?string
     {
         $parts = explode('\\', $use);

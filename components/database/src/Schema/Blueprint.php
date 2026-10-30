@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace SunsetReverie\Database\Schema;
 
+use InvalidArgumentException;
+
 /**
  * 表结构定义（最小可用集）。
  *
@@ -177,9 +179,74 @@ final class Blueprint
      *
      * @return self 当前实例
      */
-    public function unique(): self
+    /**
+     * 唯一索引。
+     *
+     * 两种用法：
+     *
+     *   // 1) 链式：修饰最近定义的那一列（历史的写法）
+     *   $table->string('slug', 200)->unique();
+     *
+     *   // 2) 按列名：与 index() 一致，可指定任意列或复合列
+     *   $table->unique('sku');
+     *   $table->unique(['post_id', 'user_id']);
+     *
+     * 第二种是后来补的。之前只支持链式，而 `unique('sku')` 这种写法
+     * **不会报错**（PHP 忽略多余参数），但会把唯一索引加到"最后一列"上——
+     * 实测中 `timestamps()` 之后的 `unique('sku')` 让 `updated_at` 变成唯一列，
+     * 插入第二条数据就冲突。这类静默错误必须在接口层消灭。
+     *
+     * @param string|list<string>|null $columns 列名（null 表示修饰最后一列）
+     * @param string|null $name 索引名
+     * @return self 当前实例
+     */
+    public function unique(string|array|null $columns = null, ?string $name = null): self
     {
-        return $this->modifyLast('__UNIQUE__');
+        if ($columns === null) {
+            return $this->modifyLast('__UNIQUE__');
+        }
+
+        $columns = array_values((array) $columns);
+
+        foreach ($columns as $column) {
+            $this->assertColumnExists((string) $column);
+        }
+
+        $this->indexes[] = [
+            'name' => $name ?? $this->table . '_' . implode('_', $columns) . '_unique',
+            'columns' => $columns,
+            'unique' => true,
+        ];
+
+        return $this;
+    }
+
+    /**
+     * 校验列存在。
+     *
+     * 列名写错时直接报错，而不是等到执行 DDL 才由数据库抛"未知列"——
+     * 后者在迁移批量执行时很难定位是哪一行写错了。
+     *
+     * @param string $column 列名
+     * @return void
+     * @throws InvalidArgumentException 列不存在时抛出
+     */
+    private function assertColumnExists(string $column): void
+    {
+        foreach ($this->columns as $definition) {
+            if (str_starts_with($definition, $column . ' ')
+                || str_starts_with($definition, $column . '\x00')
+                || $definition === $column
+                || str_starts_with($definition, $column . '__')) {
+                return;
+            }
+        }
+
+        throw new InvalidArgumentException(sprintf(
+            '索引引用了不存在的列 [%s]（表 %s）',
+            $column,
+            $this->table
+        ));
     }
 
     /**

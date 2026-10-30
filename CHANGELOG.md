@@ -8,6 +8,29 @@
 
 - 待办见文档 18.3.0「当前验收状态」的缺口列表
 
+## [0.36.1] - 2026-10-30
+
+### 修复
+
+- **`Blueprint::unique()` 不接受列名参数，静默作用到「最后一列」**
+
+`unique()` 原本签名是 `unique(): self`，只能链式修饰最近定义的列。
+而 PHP 会**静默忽略多余参数**，所以 `$table->unique('sku')` 不报错，
+却把唯一索引加到了 `timestamps()` 生成的 `updated_at` 上。
+
+实测后果：迁移成功、表建出来，但 `updated_at` 成了唯一列——
+插入第二条数据就报 `Duplicate entry`，报错信息完全指不到真正原因。
+
+现在支持两种用法：
+
+```php
+$table->string('slug', 200)->unique();   // 链式（历史写法）
+$table->unique('sku');                    // 按列名
+$table->unique(['post_id', 'user_id']);   // 复合
+```
+
+列名写错会立刻抛 `InvalidArgumentException`，而不是等数据库报「未知列」。
+
 ## [0.36.0] - 2026-10-30
 
 ### 新增

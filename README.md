@@ -167,13 +167,16 @@ final class PostService
 
 ### 已验证的环境
 
-| 项 | 版本 |
-| --- | --- |
-| PHP | 8.5.2（CI 覆盖 8.3 / 8.4 / 8.5） |
-| MySQL | 8.x |
-| PostgreSQL | 18.6 |
-| SQLite | 3.x（测试默认） |
-| 缓存 | file / array / redis / apcu |
+| 项 | 版本 | 验证情况 |
+| --- | --- | --- |
+| PHP | **8.3.36 / 8.4.27 / 8.5.2** | 三版本各跑 338 个用例，全绿 |
+| MySQL | 8.x | 方言契约 4/4 |
+| PostgreSQL | 18.6 | 方言契约 4/4 |
+| SQLite | 3.x | 测试默认后端 |
+| 缓存 | file / array / redis / apcu | 各自有单测 |
+
+三个 PHP 版本上**全部 338 个用例都执行**（无跳过）。断言数差异来自可选扩展
+（imagick / redis / apcu）缺失，不是功能差异。
 
 ---
 

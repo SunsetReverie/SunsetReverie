@@ -8,6 +8,7 @@ use Closure;
 use SunsetReverie\Config\Config;
 use SunsetReverie\Exception\ErrorCode;
 use SunsetReverie\Http\Envelope;
+use SunsetReverie\Http\Middleware\HasParameters;
 use SunsetReverie\Http\Middleware\MiddlewareInterface;
 use SunsetReverie\Http\Request;
 use SunsetReverie\Http\Response;
@@ -19,16 +20,43 @@ use SunsetReverie\RateLimit\RateLimiter;
  * 规则查找顺序：按路由名匹配 `ratelimit.routes`，未命中则用 `ratelimit.default`。
  * 超限时**直接短路返回 429**（不抛异常），以便精确控制响应头。
  */
-final class ThrottleRequests implements MiddlewareInterface
+final class ThrottleRequests implements MiddlewareInterface, HasParameters
 {
     /**
      * @param RateLimiter $limiter 限流器
      * @param Config $config 配置
      */
+    /** @var int|null 路由声明的上限（null 表示用配置） */
+    private ?int $maxAttempts = null;
+
+    /** @var int|null 路由声明的窗口秒数 */
+    private ?int $decaySeconds = null;
+
     public function __construct(
         private readonly RateLimiter $limiter,
         private readonly Config $config,
     ) {
+    }
+
+    /**
+     * 接收路由上的参数：`throttle:300,1` → [300, 1]。
+     *
+     * @param list<string> $parameters 参数
+     * @return static 新实例
+     */
+    public function withParameters(array $parameters): static
+    {
+        $clone = clone $this;
+
+        if (isset($parameters[0]) && (int) $parameters[0] > 0) {
+            $clone->maxAttempts = (int) $parameters[0];
+        }
+
+        if (isset($parameters[1]) && (int) $parameters[1] > 0) {
+            $clone->decaySeconds = (int) $parameters[1];
+        }
+
+        return $clone;
     }
 
     /**
@@ -78,6 +106,14 @@ final class ThrottleRequests implements MiddlewareInterface
      */
     private function resolveRule(Request $request): array
     {
+        // 路由上显式声明的参数优先级最高：throttle:5,60
+        if ($this->maxAttempts !== null) {
+            return [
+                'max_attempts' => $this->maxAttempts,
+                'decay_seconds' => $this->decaySeconds ?? (int) $this->config->get('ratelimit.default.decay_seconds', 60),
+            ];
+        }
+
         $routes = (array) $this->config->get('ratelimit.routes', []);
         $name = (string) $request->attribute('route.name', '');
 

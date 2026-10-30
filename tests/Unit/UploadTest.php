@@ -294,4 +294,24 @@ final class UploadTest extends TestCase
 
         return $path;
     }
+
+    /**
+     * extend() 应替换存储驱动（文档 7.10 的扩展点）。
+     *
+     * @return void
+     */
+    public function testExtendSwapsStorage(): void
+    {
+        $manager = new UploadManager(
+            ['max_size' => 1024 * 1024, 'allowed_mimes' => ['image/png']],
+            new MemoryStorage()
+        );
+
+        $replacement = new MemoryStorage();
+        $this->assertSame($manager, $manager->extend($replacement), 'extend 应返回自身以便链式调用');
+
+        $stored = $manager->store($this->pngFile('cover.png'), 'avatars');
+
+        $this->assertTrue($replacement->exists($stored->path), '文件应落在替换后的驱动里');
+    }
 }

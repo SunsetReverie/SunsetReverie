@@ -242,23 +242,19 @@ final class MakeCommands
 
         $code = "<?php\n\ndeclare(strict_types=1);\n\n"
             . "namespace App\\Api\\{$domain}\\Request;\n\n"
-            . "use SunsetReverie\\Http\\Request;\n"
-            . "use SunsetReverie\\Validation\\Validator;\n\n"
+            . "use SunsetReverie\\Validation\\FormRequest;\n\n"
             . "/**\n * {$class}：{$domain} 域请求校验。\n *\n"
-            . " * 控制器里这样用：\n"
-            . " *   \$data = (new {$class}())->validate(\$request, \$validator);\n */\n"
-            . "final class {$class}\n{\n"
+            . " * 控制器里直接声明参数即可，框架会自动校验：\n"
+            . " *   public function store({$class} \$request): array\n"
+            . " *   {\n"
+            . " *       \$data = \$request->validated();\n"
+            . " *   }\n */\n"
+            . "final class {$class} extends FormRequest\n{\n"
             . "    /**\n     * 校验规则。\n     *\n     * @return array<string, string> 规则表\n     */\n"
             . "    public function rules(): array\n    {\n"
             . "        return [\n"
             . "            'title' => 'required|string|max:200',\n"
-            . "        ];\n    }\n\n"
-            . "    /**\n     * 执行校验。\n     *\n"
-            . "     * @param Request \$request 当前请求\n"
-            . "     * @param Validator \$validator 校验器\n"
-            . "     * @return array<string, mixed> 通过校验的数据\n     */\n"
-            . "    public function validate(Request \$request, Validator \$validator): array\n    {\n"
-            . "        return \$validator->validate(\$request->post(), \$this->rules());\n    }\n}\n";
+            . "        ];\n    }\n}\n";
 
         return $this->write($file, $code);
     }

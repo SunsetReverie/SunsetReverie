@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace SunsetReverie\Routing;
 
+use SunsetReverie\Api\ApiDomain;
+
 use Closure;
 use SunsetReverie\Routing\Exception\DuplicateRouteException;
 use SunsetReverie\Routing\Exception\MethodNotAllowedException;
@@ -35,6 +37,9 @@ final class Router
 
     /** @var list<Route> 全部路由（去重后，按注册顺序） */
     private array $all = [];
+
+    /** @var ApiDomain|null 当前正在注册路由的域（用于中间件别名解析） */
+    private ?ApiDomain $currentDomain = null;
 
     /** @var list<array<string, mixed>> 分组属性栈 */
     private array $groupStack = [];
@@ -126,12 +131,20 @@ final class Router
      */
     public function group(array $attributes, Closure $callback): void
     {
+        $previousDomain = $this->currentDomain;
+
+        // 域上下文可以嵌套（域 group → 版本 group → 资源 group），只在最外层设置
+        if (isset($attributes['domain'])) {
+            $this->currentDomain = $attributes['domain'];
+        }
+
         $this->groupStack[] = $attributes;
 
         try {
             $callback($this);
         } finally {
             array_pop($this->groupStack);
+            $this->currentDomain = $previousDomain;
         }
     }
 
@@ -151,7 +164,7 @@ final class Router
         $methods = array_map('strtoupper', $methods);
 
         $fullName = $this->joinName($name);
-        $route = new Route($methods, $fullUri, $handler, $fullName, $this->groupMiddleware());
+        $route = new Route($methods, $fullUri, $handler, $fullName, $this->groupMiddleware(), $this->currentDomain);
 
         foreach ($methods as $method) {
             if (isset($this->static[$method . ' ' . $fullUri])) {

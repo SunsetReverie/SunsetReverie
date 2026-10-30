@@ -29,6 +29,8 @@ final class ApiDomain
         public readonly ?string $guard = null,
         public readonly array $versions = [],
         public readonly ?int $errorSegment = null,
+        /** @var array<string, string> 域级中间件别名（别名 => 类名），覆盖全局同名别名 */
+        public readonly array $middlewareAliases = [],
     ) {
     }
 
@@ -49,6 +51,7 @@ final class ApiDomain
             guard: isset($config['guard']) ? (string) $config['guard'] : null,
             versions: array_values((array) ($config['versions'] ?? [])),
             errorSegment: isset($config['error_segment']) ? (int) $config['error_segment'] : null,
+            middlewareAliases: array_map('strval', (array) ($config['middleware_aliases'] ?? [])),
         );
     }
 

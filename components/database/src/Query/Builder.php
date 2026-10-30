@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace SunsetReverie\Database\Query;
 
+use Closure;
 use InvalidArgumentException;
 use SunsetReverie\Database\Connection;
+use SunsetReverie\Exception\ErrorCode;
+use SunsetReverie\Exception\HttpException;
 use SunsetReverie\Database\Exception\QueryException;
 
 /**
@@ -268,6 +271,95 @@ final class Builder
         $sql = sprintf('SELECT COUNT(*) AS aggregate FROM %s%s', $this->table, $this->toWhereSql());
 
         return (int) $this->connection->scalar($sql, $this->bindings());
+    }
+
+    /**
+     * 分页查询（一次返回数据与分页元信息）。
+     *
+     * @param int $perPage 每页条数（上限 100）
+     * @param int $page 页码（从 1 开始）
+     * @return array{items: list<array<string, mixed>>, total: int, page: int, per_page: int, last_page: int}
+     */
+    public function paginate(int $perPage = 15, int $page = 1): array
+    {
+        $perPage = min(100, max(1, $perPage));
+        $page = max(1, $page);
+
+        $total = $this->count();
+        $items = $this->limit($perPage)->offset(($page - 1) * $perPage)->get();
+
+        return [
+            'items' => $items,
+            'total' => $total,
+            'page' => $page,
+            'per_page' => $perPage,
+            'last_page' => $total === 0 ? 1 : (int) ceil($total / $perPage),
+        ];
+    }
+
+    /**
+     * 按主键查询，不存在时抛 404。
+     *
+     * @param int|string $id 主键值
+     * @param string $primaryKey 主键字段
+     * @return array<string, mixed> 记录
+     * @throws HttpException 记录不存在时抛出
+     */
+    public function findOrFail(int|string $id, string $primaryKey = 'id'): array
+    {
+        $row = $this->where($primaryKey, $id)->first();
+
+        if ($row === null) {
+            throw new HttpException(404, ErrorCode::NotFound->value, sprintf(
+                '记录不存在（%s = %s）',
+                $primaryKey,
+                (string) $id
+            ));
+        }
+
+        return $row;
+    }
+
+    /**
+     * 条件成立时才应用额外约束。
+     *
+     * @param bool $condition 条件
+     * @param Closure(self): void $callback 约束回调
+     * @return self 当前构造器
+     */
+    public function when(bool $condition, Closure $callback): self
+    {
+        if ($condition) {
+            $callback($this);
+        }
+
+        return $this;
+    }
+
+    /**
+     * BETWEEN 条件（闭区间）。
+     *
+     * @param string $column 字段
+     * @param array{0: mixed, 1: mixed} $range 两个边界
+     * @return self 当前构造器
+     * @throws InvalidArgumentException 边界数量不对时抛出
+     */
+    public function whereBetween(string $column, array $range): self
+    {
+        $values = array_values($range);
+
+        if (count($values) !== 2) {
+            throw new InvalidArgumentException('whereBetween 需要恰好两个边界值');
+        }
+
+        $this->assertIdentifier($column);
+        $this->wheres[] = [
+            'sql' => sprintf('%s BETWEEN ? AND ?', $column),
+            'bindings' => [$values[0], $values[1]],
+            'boolean' => 'and',
+        ];
+
+        return $this;
     }
 
     /**

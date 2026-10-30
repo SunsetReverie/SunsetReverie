@@ -81,7 +81,7 @@ final class Pipeline
     /**
      * 将单个中间件包装为可调用闭包。
      *
-     * @param class-string<MiddlewareInterface>|Closure $pipe 中间件
+     * @param class-string<MiddlewareInterface>|MiddlewareInterface|Closure $pipe 中间件
      * @param Closure(Request): Response $next 下一层
      * @return Closure(Request): Response 包装后的闭包
      */
@@ -91,8 +91,8 @@ final class Pipeline
             return static fn (Request $request): Response => $pipe($request, $next);
         }
 
-        /** @var MiddlewareInterface $instance */
-        $instance = $this->container->get($pipe);
+        // 已是实例（MiddlewareResolver 解析过别名与参数）时直接使用，不再走容器
+        $instance = is_object($pipe) ? $pipe : $this->container->get($pipe);
 
         if (!$instance instanceof MiddlewareInterface) {
             throw new \RuntimeException(sprintf(

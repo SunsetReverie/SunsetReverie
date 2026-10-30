@@ -28,6 +28,7 @@ final class AuthServiceProvider extends ServiceProvider
             return new AuthManager(
                 (array) $config->get('auth', []),
                 $container->get(DomainContext::class),
+                $container,
             );
         });
 

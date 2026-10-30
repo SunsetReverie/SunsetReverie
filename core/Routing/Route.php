@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace SunsetReverie\Routing;
 
+use SunsetReverie\Api\ApiDomain;
+
 /**
  * 单条路由定义。
  *
@@ -39,6 +41,7 @@ final class Route
         public readonly mixed $handler,
         public ?string $name = null,
         array $middleware = [],
+        public readonly ?ApiDomain $domain = null,
     ) {
         $this->middleware = array_values($middleware);
         $this->compile();

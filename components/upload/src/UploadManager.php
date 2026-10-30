@@ -51,7 +51,7 @@ final class UploadManager
      */
     public function __construct(
         private readonly array $config,
-        private readonly StorageInterface $storage,
+        private StorageInterface $storage,
         private readonly ?DomainContext $domainContext = null,
     ) {
     }
@@ -139,6 +139,22 @@ final class UploadManager
     public function delete(string $path): bool
     {
         return $this->storage->delete($path);
+    }
+
+    /**
+     * 替换存储驱动（文档 7.10 承诺的扩展点：新增存储后端不改 core/）。
+     *
+     * 典型用法：在 ServiceProvider::boot() 里
+     *   $app->upload()->extend(new S3Storage($config));
+     *
+     * @param StorageInterface $storage 存储驱动
+     * @return self 当前实例
+     */
+    public function extend(StorageInterface $storage): self
+    {
+        $this->storage = $storage;
+
+        return $this;
     }
 
     /**

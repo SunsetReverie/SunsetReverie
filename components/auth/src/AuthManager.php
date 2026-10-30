@@ -6,6 +6,8 @@ namespace SunsetReverie\Auth;
 
 use Closure;
 use SunsetReverie\Api\DomainContext;
+use SunsetReverie\Container\Container;
+use SunsetReverie\Http\Request;
 use SunsetReverie\Auth\Exception\AuthenticationException;
 use SunsetReverie\Auth\Guard\JwtGuard;
 use SunsetReverie\Auth\Jwt\JwtCodec;
@@ -28,7 +30,50 @@ final class AuthManager
     public function __construct(
         private readonly array $config,
         private readonly ?DomainContext $domainContext = null,
+        private readonly ?Container $container = null,
     ) {
+    }
+
+    /**
+     * 当前登录用户（无请求上下文或未登录时返回 null）。
+     *
+     * 供 `Auth::user()` 这类无参调用使用；控制器里更推荐直接用
+     * `$request->attribute(Authenticate::ATTRIBUTE)`，依赖更显式。
+     *
+     * @return AuthenticatedUser|null 当前用户
+     */
+    public function user(): ?AuthenticatedUser
+    {
+        if ($this->container === null || !$this->container->has(Request::class)) {
+            return null;
+        }
+
+        $request = $this->container->get(Request::class);
+        $user = $request instanceof Request
+            ? $request->attribute(\SunsetReverie\Auth\Middleware\Authenticate::ATTRIBUTE)
+            : null;
+
+        return $user instanceof AuthenticatedUser ? $user : null;
+    }
+
+    /**
+     * 是否已登录。
+     *
+     * @return bool 已登录返回 true
+     */
+    public function check(): bool
+    {
+        return $this->user() !== null;
+    }
+
+    /**
+     * 当前用户 ID（未登录返回 null）。
+     *
+     * @return string|null 用户标识
+     */
+    public function id(): ?string
+    {
+        return $this->user()?->id;
     }
 
     /**

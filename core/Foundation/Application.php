@@ -11,6 +11,8 @@ use SunsetReverie\Console\ConsoleKernel;
 use SunsetReverie\Config\Env;
 use SunsetReverie\Config\EnvLoader;
 use SunsetReverie\Auth\AuthManager;
+use SunsetReverie\RateLimit\Middleware\ThrottleRequests;
+use SunsetReverie\Auth\Middleware\Authenticate;
 use SunsetReverie\Auth\AuthServiceProvider;
 use SunsetReverie\Api\DomainContext;
 use SunsetReverie\Api\DomainRegistry;
@@ -31,6 +33,7 @@ use SunsetReverie\Http\Envelope;
 use SunsetReverie\Http\Middleware\HandleCors;
 use SunsetReverie\Http\Middleware\SecurityHeaders;
 use SunsetReverie\Http\Middleware\TraceRequest;
+use SunsetReverie\Http\MiddlewareResolver;
 use SunsetReverie\Http\Pipeline;
 use SunsetReverie\Http\Request;
 use SunsetReverie\Log\LogManager;
@@ -44,6 +47,7 @@ use SunsetReverie\Upload\Controller\FileController;
 use SunsetReverie\Upload\UploadManager;
 use SunsetReverie\Upload\UploadServiceProvider;
 use SunsetReverie\Validation\ValidationServiceProvider;
+use SunsetReverie\Validation\FormRequest;
 use SunsetReverie\Validation\Validator;
 
 /**
@@ -58,7 +62,7 @@ use SunsetReverie\Validation\Validator;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.19.0';
+    public const VERSION = '0.20.0';
 
     private static ?self $instance = null;
 
@@ -81,6 +85,9 @@ final class Application
     private ProviderRepository $providers;
 
     private DomainRegistry $domains;
+
+    /** @var list<Closure> 请求结束回调（逆序执行） */
+    private array $terminatingCallbacks = [];
 
     private DomainContext $domainContext;
 
@@ -306,6 +313,9 @@ final class Application
         $request ??= Request::capture();
         $this->currentRequest = $request;
 
+        // 当前请求写入容器：Auth::user() / 日志等无参调用靠它取上下文
+        $this->container->instance(Request::class, $request);
+
         $matched = null;
         $dispatchError = null;
 
@@ -321,10 +331,15 @@ final class Application
                 ->withAttribute('route.uri', $matched['route']->uri);
         }
 
-        $middleware = [
-            ...$this->globalMiddleware,
-            ...($matched === null ? [] : $matched['route']->middlewareList()),
-        ];
+        // 字符串声明（别名 / 带参数）在此解析成实例；域级别名覆盖全局
+        $middleware = (new MiddlewareResolver($this->container, $this->middlewareAliases()))
+            ->resolve(
+                [
+                    ...$this->globalMiddleware,
+                    ...($matched === null ? [] : $matched['route']->middlewareList()),
+                ],
+                $matched === null ? [] : ($matched['route']->domain?->middlewareAliases ?? []),
+            );
 
         try {
             return $this->pipeline
@@ -536,6 +551,31 @@ final class Application
     }
 
     /**
+     * 中间件别名表：内置默认 + 配置追加（配置可覆盖，见文档 6.7.3）。
+     *
+     * 放在 Application 而不是 core/Http，是因为内置别名指向组件类，
+     * 只有组装层才允许依赖组件（见 ARCH-4）。
+     *
+     * @return array<string, string> 别名 => 类名
+     */
+    private function middlewareAliases(): array
+    {
+        $defaults = [
+            'auth' => Authenticate::class,
+            'throttle' => ThrottleRequests::class,
+            'cors' => HandleCors::class,
+            'log' => LogRequest::class,
+            'domain' => ResolveDomain::class,
+            'trace' => TraceRequest::class,
+            'security' => SecurityHeaders::class,
+        ];
+
+        $configured = (array) $this->config->get('api.middleware_aliases', []);
+
+        return array_merge($defaults, array_map('strval', $configured));
+    }
+
+    /**
      * 加载路由：生产环境优先使用缓存，其余情况现场注册。
      *
      * @return void
@@ -606,6 +646,8 @@ final class Application
                 'prefix' => $domain->prefix,
                 'as' => $domain->name . '.',
                 'middleware' => $domain->middleware,
+                // 让路由记住自己属于哪个域，供中间件别名解析使用
+                'domain' => $domain,
             ], static function (Router $router) use ($registrar): void {
                 $registrar($router);
             });
@@ -651,6 +693,46 @@ final class Application
     private function shouldPreferCache(): bool
     {
         return Env::string('APP_ENV', 'local') === 'production';
+    }
+
+    /**
+     * 当前运行环境（local / test / staging / production）。
+     *
+     * @return string 环境名
+     */
+    public function environment(): string
+    {
+        return Env::string('APP_ENV', 'local');
+    }
+
+    /**
+     * 注册请求结束回调。
+     *
+     * @param Closure(Application): void $callback 回调
+     * @return void
+     */
+    public function terminating(Closure $callback): void
+    {
+        $this->terminatingCallbacks[] = $callback;
+    }
+
+    /**
+     * 请求收尾：逆序执行终止回调。
+     *
+     * 由入口在**响应发送之后**调用（`Response::send()` 之后），
+     * 这样回调里的失败不会影响已经发出的响应。
+     *
+     * @return void
+     */
+    public function terminate(): void
+    {
+        foreach (array_reverse($this->terminatingCallbacks) as $callback) {
+            try {
+                $callback($this);
+            } catch (Throwable) {
+                // 收尾阶段的异常不应影响已完成的响应
+            }
+        }
     }
 
     /**
@@ -781,6 +863,16 @@ final class Application
 
                 if ($class === Request::class || $request instanceof $class) {
                     $arguments[] = $request;
+
+                    continue;
+                }
+
+                // FormRequest 子类：实例化后立即校验，失败直接 422
+                if (is_subclass_of($class, FormRequest::class)) {
+                    /** @var FormRequest $form */
+                    $form = $this->container->get($class);
+                    $form->validateResolved($request, $this->validator());
+                    $arguments[] = $form;
 
                     continue;
                 }

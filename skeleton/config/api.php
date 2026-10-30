@@ -19,6 +19,17 @@ return [
     // 路由组织模式：single（每域一个文件）/ directory（每域入口 + 版本子目录）
     'routing_mode' => env('API_ROUTING_MODE', 'single'),
 
+    /*
+     * 中间件别名（全局）。
+     *
+     * 内置别名已可用：auth / throttle / cors / log / domain / trace / security。
+     * 这里可以覆盖或补充；路由里写 ->middleware(['auth']) 即可，
+     * 支持参数：->middleware(['throttle:300,1'])。
+     */
+    'middleware_aliases' => [
+        // 'admin.auth' => \App\Api\Admin\Middleware\AdminAuth::class,
+    ],
+
     // 域定义；留空表示单域模式（路由写在 routes/api.php）
     'domains' => [
         // 'admin' => [
@@ -28,6 +39,10 @@ return [
         //     'versions' => ['v1'],
         //     'middleware' => [],
         //     'error_segment' => 51,
+        //     // 域级别名：覆盖全局同名别名（同一 'auth' 在不同域指向不同实现）
+        //     'middleware_aliases' => [
+        //         'auth' => \App\Api\Admin\Middleware\AdminAuth::class,
+        //     ],
         // ],
         // 'web' => [
         //     'prefix' => 'web',

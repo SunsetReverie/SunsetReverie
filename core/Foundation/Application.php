@@ -29,6 +29,9 @@ use SunsetReverie\Http\Middleware\SecurityHeaders;
 use SunsetReverie\Http\Middleware\TraceRequest;
 use SunsetReverie\Http\Pipeline;
 use SunsetReverie\Http\Request;
+use SunsetReverie\Log\LogManager;
+use SunsetReverie\Log\Middleware\LogRequest;
+use SunsetReverie\Log\LogServiceProvider;
 use SunsetReverie\Http\Response;
 use SunsetReverie\RateLimit\RateLimitServiceProvider;
 use SunsetReverie\Routing\Router;
@@ -47,7 +50,7 @@ use SunsetReverie\Validation\Validator;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.7.0';
+    public const VERSION = '0.8.0';
 
     private static ?self $instance = null;
 
@@ -398,6 +401,7 @@ final class Application
             ValidationServiceProvider::class,
             AuthServiceProvider::class,
             RateLimitServiceProvider::class,
+            LogServiceProvider::class,
         ];
 
         $configured = $this->config->get('app.providers');
@@ -460,7 +464,7 @@ final class Application
 
         // 顺序很重要：安全头在最外（保证错误响应也带头），追踪其次，CORS 最后
         // 这样预检 204 也能拿到 X-Request-Id 与安全头
-        return [SecurityHeaders::class, TraceRequest::class, HandleCors::class];
+        return [SecurityHeaders::class, TraceRequest::class, LogRequest::class, HandleCors::class];
     }
 
     /**

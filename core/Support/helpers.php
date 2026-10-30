@@ -40,3 +40,20 @@ if (!function_exists('config')) {
         }
     }
 }
+
+if (!function_exists('logger')) {
+    /**
+     * 获取日志记录器。
+     *
+     * @param string|null $channel 通道名，null 表示默认通道
+     * @return \SunsetReverie\Log\Logger 记录器
+     */
+    function logger(?string $channel = null): \SunsetReverie\Log\Logger
+    {
+        $app = \SunsetReverie\Foundation\Application::getInstance();
+
+        return $channel === null
+            ? $app->container()->get(\SunsetReverie\Log\Logger::class)
+            : $app->container()->get(\SunsetReverie\Log\LogManager::class)->channel($channel);
+    }
+}

@@ -61,14 +61,23 @@ done < <(find core components tests skeleton -name '*.php' -type f 2>/dev/null)
 
 if [ "$BAD" -eq 0 ]; then ok "$TOTAL 个文件语法正确"; else bad "$BAD / $TOTAL 语法错误"; fi
 
-# ── 3. 单元测试 ──────────────────────────────────────────────────
+# ── 3. 单元测试 + 覆盖率（一次跑完，避免重复执行）────────────────
 step "单元测试（SQLite 内存库）"
 
-if php tests/run.php > /tmp/ci-tests.log 2>&1; then
+# 分层阈值：CLI 层不设硬指标——命令是编排代码，大量分支依赖真实环境
+COVERAGE_ARGS="--coverage --coverage-min-core=80 --coverage-min-components=75"
+
+if php tests/run.php $COVERAGE_ARGS > /tmp/ci-tests.log 2>&1; then
     ok "$(grep -E '通过 [0-9]+，失败' /tmp/ci-tests.log | tail -1 | sed 's/\x1b\[[0-9;]*m//g')"
+
+    # 把分层覆盖率摘要带出来，CI 日志里一眼能看到
+    while IFS= read -r line; do
+        printf '    %s\n' "$(echo "$line" | sed 's/\x1b\[[0-9;]*m//g' | sed 's/^ *//')"
+    done < <(grep -E '^    (core|components|CLI)' /tmp/ci-tests.log)
 else
-    bad "测试失败"
-    grep -E '✗|失败详情' /tmp/ci-tests.log | head -6 | sed 's/^/    /'
+    bad "测试或覆盖率未达标"
+    grep -E '✗|失败详情|未达阈值' /tmp/ci-tests.log | head -8 | sed 's/^/    /'
+    grep -E '^    (core|components)' /tmp/ci-tests.log | head -3 | sed 's/^/    /'
 fi
 
 # ── 4. 架构检查 ──────────────────────────────────────────────────

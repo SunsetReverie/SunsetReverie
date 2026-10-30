@@ -25,6 +25,8 @@ $filter = null;
 $coverage = false;
 $coverageMin = null;
 $coverageDetail = null;
+$coverageMinCore = null;
+$coverageMinComponents = null;
 
 foreach ($argv ?? [] as $arg) {
     if (str_starts_with($arg, '--filter=')) {
@@ -37,6 +39,12 @@ foreach ($argv ?? [] as $arg) {
     } elseif (str_starts_with($arg, '--coverage-detail=')) {
         $coverage = true;
         $coverageDetail = substr($arg, strlen('--coverage-detail='));
+    } elseif (str_starts_with($arg, '--coverage-min-core=')) {
+        $coverage = true;
+        $coverageMinCore = (float) substr($arg, strlen('--coverage-min-core='));
+    } elseif (str_starts_with($arg, '--coverage-min-components=')) {
+        $coverage = true;
+        $coverageMinComponents = (float) substr($arg, strlen('--coverage-min-components='));
     }
 }
 
@@ -169,6 +177,7 @@ if ($coverage) {
     $totalLines = 0;
     $coveredLines = 0;
     $perFile = [];
+    $bucketLines = ['core' => [0, 0], 'components' => [0, 0], 'cli' => [0, 0]];
 
     foreach (pcov\collect() as $file => $lines) {
         $inScope = false;
@@ -204,6 +213,15 @@ if ($coverage) {
 
         $totalLines += $executable;
         $coveredLines += $executed;
+
+        // 分层：CLI 层是编排代码，大量分支依赖真实环境，单独统计
+        $relative = str_replace($basePath . '/', '', (string) $file);
+        $bucket = str_starts_with($relative, 'core/Console')
+            ? 'cli'
+            : (str_starts_with($relative, 'components') ? 'components' : 'core');
+
+        $bucketLines[$bucket][0] += $executed;
+        $bucketLines[$bucket][1] += $executable;
         $perFile[str_replace($basePath . '/', '', (string) $file)] = [
             'executed' => $executed,
             'executable' => $executable,
@@ -220,6 +238,65 @@ if ($coverage) {
     fwrite(STDOUT, "\n覆盖率（行）\n");
     fwrite(STDOUT, sprintf("  总覆盖  %5.1f%%   %d / %d 行\n", $percent, $coveredLines, $totalLines));
     fwrite(STDOUT, sprintf("  文件数  %d\n", count($perFile)));
+
+    /*
+     * 分层报告。
+     *
+     * 全局百分比会把「核心逻辑测得好不好」和「CLI 编排层测了多少」混在一起，
+     * 而后者大量分支依赖真实数据库/Redis，本质难覆盖。
+     * 分层看才知道问题在哪一层。
+     */
+    $layerNames = [
+        'core' => 'core（除 CLI）',
+        'components' => 'components',
+        'cli' => 'CLI 层',
+    ];
+
+    $layerThresholds = [
+        'core' => $coverageMinCore,
+        'components' => $coverageMinComponents,
+        'cli' => null,   // 不设硬阈值：命令是编排层
+    ];
+
+    fwrite(STDOUT, "\n  分层：\n");
+
+    foreach ($layerNames as $key => $label) {
+        [$executed, $executable] = $bucketLines[$key];
+
+        if ($executable === 0) {
+            continue;
+        }
+
+        $layerPercent = $executed / $executable * 100;
+        $threshold = $layerThresholds[$key];
+
+        $mark = '';
+
+        if ($threshold !== null) {
+            // 变量名不能叫 $passed —— 它是上面的「通过用例数」，
+            // 在这里赋值会把汇总里的 332 变成 true，静默出错
+            $layerOk = $layerPercent >= $threshold;
+
+            if (!$layerOk) {
+                $failed++;
+            }
+
+            $mark = sprintf(
+                '  [阈值 %.0f%%] %s',
+                $threshold,
+                $layerOk ? "\033[32m✓\033[0m" : "\033[31m✗\033[0m"
+            );
+        }
+
+        fwrite(STDOUT, sprintf(
+            "    %-16s %5.1f%%   %d/%d%s\n",
+            $label,
+            $layerPercent,
+            $executed,
+            $executable,
+            $mark
+        ));
+    }
 
     // 覆盖率最低的 10 个文件——这是补测试时最该先看的地方
     $worst = array_slice($perFile, 0, 10, true);

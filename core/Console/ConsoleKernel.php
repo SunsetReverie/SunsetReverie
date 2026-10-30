@@ -1775,7 +1775,11 @@ PHP;
         }
 
         try {
-            $file = $this->migrator()->make($name);
+            // 走静态方法：生成文件不需要数据库连接
+            $file = \SunsetReverie\Database\Migration\Migrator::createFile(
+                $this->migrationDirectory(),
+                $name
+            );
         } catch (\Throwable $e) {
             $this->error('生成失败：' . $e->getMessage());
 

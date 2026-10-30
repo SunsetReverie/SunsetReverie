@@ -115,18 +115,40 @@ final class Migrator
      */
     public function make(string $name): string
     {
-        if (!is_dir($this->directory) && !@mkdir($this->directory, 0755, true) && !is_dir($this->directory)) {
-            throw new MigrationException('迁移目录不可创建：' . $this->directory);
+        return self::createFile($this->directory, $name);
+    }
+
+    /**
+     * 只生成文件，**不需要数据库连接**。
+     *
+     * 拆成静态方法是必要的：`sr make:migration` 是新建项目最先要用的命令之一，
+     * 而那时 `config/database.php` 往往还没配好。原来的实现要通过
+     * `$this->app->db()` 构造整个 Migrator 才能调 make()，
+     * 于是没配数据库时生成一个空迁移文件都会失败：
+     *
+     *   生成失败：未找到数据库连接配置 [mysql]，请在 config/database.php 中定义
+     *
+     * 生成文件是纯文件操作，不该和连接绑在一起。
+     *
+     * @param string $directory 迁移目录（绝对路径）
+     * @param string $name 迁移名（如 create_users_table）
+     * @return string 生成的文件路径
+     * @throws MigrationException 目录不可创建或同名文件已存在时抛出
+     */
+    public static function createFile(string $directory, string $name): string
+    {
+        if (!is_dir($directory) && !@mkdir($directory, 0755, true) && !is_dir($directory)) {
+            throw new MigrationException('迁移目录不可创建：' . $directory);
         }
 
         $slug = strtolower((string) preg_replace('/[^a-zA-Z0-9]+/', '_', $name));
-        $file = $this->directory . '/' . date('Y_m_d_His') . '_' . trim($slug, '_') . '.php';
+        $file = $directory . '/' . date('Y_m_d_His') . '_' . trim($slug, '_') . '.php';
 
         if (is_file($file)) {
             throw new MigrationException('同名迁移已存在：' . $file);
         }
 
-        file_put_contents($file, $this->template($name));
+        file_put_contents($file, self::template($name));
 
         return $file;
     }
@@ -188,7 +210,7 @@ final class Migrator
      * @param string $name 迁移名
      * @return string PHP 代码
      */
-    private function template(string $name): string
+    private static function template(string $name): string
     {
         return <<<PHP
 <?php

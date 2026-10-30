@@ -8,6 +8,8 @@ declare(strict_types=1);
  * 用法：
  *   php tests/run.php
  *   php tests/run.php --filter=Container
+ *   php tests/run.php --coverage
+ *   php tests/run.php --coverage --coverage-min=80
  *
  * 约定：
  * - 测试类位于 tests/Unit、tests/Feature 或 tests/Integration，
@@ -19,17 +21,41 @@ declare(strict_types=1);
 
 $basePath = dirname(__DIR__);
 
-require $basePath . '/core/Foundation/autoload.php';
-require __DIR__ . '/AssertionFailedException.php';
-require __DIR__ . '/TestCase.php';
-
 $filter = null;
+$coverage = false;
+$coverageMin = null;
+$coverageDetail = null;
 
 foreach ($argv ?? [] as $arg) {
     if (str_starts_with($arg, '--filter=')) {
         $filter = substr($arg, strlen('--filter='));
+    } elseif ($arg === '--coverage') {
+        $coverage = true;
+    } elseif (str_starts_with($arg, '--coverage-min=')) {
+        $coverage = true;
+        $coverageMin = (float) substr($arg, strlen('--coverage-min='));
+    } elseif (str_starts_with($arg, '--coverage-detail=')) {
+        $coverage = true;
+        $coverageDetail = substr($arg, strlen('--coverage-detail='));
     }
 }
+
+if ($coverage && !function_exists('pcov\\start')) {
+    fwrite(STDERR, "需要 pcov 扩展：pecl install pcov（并在 php.ini 加 extension=pcov.so）\n");
+    exit(2);
+}
+
+/*
+ * 必须在加载任何被测代码**之前**启动收集，
+ * 否则 autoload 阶段 include 的文件会被算作"未执行"。
+ */
+if ($coverage) {
+    pcov\start();
+}
+
+require $basePath . '/core/Foundation/autoload.php';
+require __DIR__ . '/AssertionFailedException.php';
+require __DIR__ . '/TestCase.php';
 
 /**
  * 收集测试文件。
@@ -125,6 +151,159 @@ if ($failures !== []) {
     }
 
     fwrite(STDOUT, "\n");
+}
+
+/*
+ * 覆盖率报告。
+ *
+ * pcov 的 collect() 返回 ['/path/file.php' => [行号 => 1|-1]]：
+ *   1  = 该行被执行过
+ *   -1 = 该行可执行但没执行
+ * 所以「可执行行数」= 数组长度，「已覆盖」= 值为 1 的个数，
+ * 不需要另外用 tokenizer 估算分母。
+ */
+if ($coverage) {
+    pcov\stop();
+
+    $include = [$basePath . '/core/', $basePath . '/components/'];
+    $totalLines = 0;
+    $coveredLines = 0;
+    $perFile = [];
+
+    foreach (pcov\collect() as $file => $lines) {
+        $inScope = false;
+
+        foreach ($include as $prefix) {
+            if (str_starts_with((string) $file, $prefix)) {
+                $inScope = true;
+                break;
+            }
+        }
+
+        if (!$inScope) {
+            continue;
+        }
+
+        $executed = 0;
+        $executable = 0;
+        $missing = [];
+
+        foreach ($lines as $line => $state) {
+            $executable++;
+
+            if ($state === 1) {
+                $executed++;
+            } else {
+                $missing[] = $line;
+            }
+        }
+
+        if ($executable === 0) {
+            continue;
+        }
+
+        $totalLines += $executable;
+        $coveredLines += $executed;
+        $perFile[str_replace($basePath . '/', '', (string) $file)] = [
+            'executed' => $executed,
+            'executable' => $executable,
+            'percent' => $executed / $executable * 100,
+            'missing' => $missing,
+        ];
+    }
+
+    // 按覆盖率升序（asort 比较的是数组元素，先比 executed，顺序会错乱）
+    uasort($perFile, static fn (array $a, array $b): int => $a['percent'] <=> $b['percent']);
+
+    $percent = $totalLines === 0 ? 0.0 : $coveredLines / $totalLines * 100;
+
+    fwrite(STDOUT, "\n覆盖率（行）\n");
+    fwrite(STDOUT, sprintf("  总覆盖  %5.1f%%   %d / %d 行\n", $percent, $coveredLines, $totalLines));
+    fwrite(STDOUT, sprintf("  文件数  %d\n", count($perFile)));
+
+    // 覆盖率最低的 10 个文件——这是补测试时最该先看的地方
+    $worst = array_slice($perFile, 0, 10, true);
+
+    if ($worst !== []) {
+        fwrite(STDOUT, "\n  覆盖最低的 10 个：\n");
+
+        foreach ($worst as $file => $stat) {
+            fwrite(STDOUT, sprintf(
+                "    %5.1f%%  %-46s %d/%d\n",
+                $stat['percent'],
+                $file,
+                $stat['executed'],
+                $stat['executable']
+            ));
+        }
+    }
+
+    // 完全没被执行的文件单独列出（往往是"写了但没测"）
+    $untouched = [];
+
+    foreach ($perFile as $file => $stat) {
+        if ($stat['executed'] === 0) {
+            $untouched[] = sprintf('%s (%d 行)', $file, $stat['executable']);
+        }
+    }
+
+    if ($untouched !== []) {
+        fwrite(STDOUT, "\n  完全未执行的文件：\n");
+
+        foreach ($untouched as $line) {
+            fwrite(STDOUT, '    ' . $line . "\n");
+        }
+    }
+
+    // 指定文件的未覆盖行区间（定位"这块为什么没测"用）
+    if ($coverageDetail !== null) {
+        fwrite(STDOUT, sprintf("\n  [%s] 的未覆盖行：\n", $coverageDetail));
+
+        foreach ($perFile as $file => $stat) {
+            if (!str_contains((string) $file, $coverageDetail)) {
+                continue;
+            }
+
+            $missing = $stat['missing'];
+            sort($missing);
+
+            $ranges = [];
+            $start = null;
+            $prev = null;
+
+            foreach ($missing as $line) {
+                if ($start === null) {
+                    $start = $prev = $line;
+                    continue;
+                }
+
+                if ($line === $prev + 1) {
+                    $prev = $line;
+                    continue;
+                }
+
+                $ranges[] = $start === $prev ? "L{$start}" : "L{$start}-L{$prev}";
+                $start = $prev = $line;
+            }
+
+            if ($start !== null) {
+                $ranges[] = $start === $prev ? "L{$start}" : "L{$start}-L{$prev}";
+            }
+
+            fwrite(STDOUT, sprintf("    %s：%d 行未覆盖，%d 个区间\n", $file, count($missing), count($ranges)));
+            fwrite(STDOUT, '    ' . implode(' ', array_slice($ranges, 0, 30)) . "\n");
+        }
+    }
+
+    if ($coverageMin !== null && $percent < $coverageMin) {
+        fwrite(STDOUT, sprintf(
+            "\n  \033[31m未达阈值\033[0m：%.1f%% < %.1f%%\n",
+            $percent,
+            $coverageMin
+        ));
+
+        $failed++;
+    }
 }
 
 $summary = sprintf(

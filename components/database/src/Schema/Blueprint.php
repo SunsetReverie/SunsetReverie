@@ -183,6 +183,25 @@ final class Blueprint
     }
 
     /**
+     * 添加复合唯一索引（如 `(post_id, user_id)` 保证同一用户对同一文章只点一次）。
+     *
+     * @param list<string>|string $columns 列（或多列）
+     * @param string|null $name 索引名
+     * @return self 当前实例
+     */
+    public function uniqueIndex(array|string $columns, ?string $name = null): self
+    {
+        $columns = array_values((array) $columns);
+        $this->indexes[] = [
+            'name' => $name ?? $this->table . '_' . implode('_', $columns) . '_unique',
+            'columns' => $columns,
+            'unique' => true,
+        ];
+
+        return $this;
+    }
+
+    /**
      * 添加普通索引。
      *
      * @param list<string>|string $columns 列（或多列）

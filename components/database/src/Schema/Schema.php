@@ -22,6 +22,23 @@ final class Schema
     }
 
     /**
+     * 获取底层连接。
+     *
+     * 迁移工具目前只提供建表 / 删表，**改表（加字段、改索引）需要原生 SQL**：
+     *
+     *   $schema->connection()->affect('ALTER TABLE posts ADD COLUMN like_count INTEGER DEFAULT 0');
+     *
+     * 这是明确的功能边界：改表涉及大量方言差异（列位置、索引重建、默认值回填），
+     * 在没有充分测试的情况下提供半成品 DSL 反而更危险。
+     *
+     * @return Connection 数据库连接
+     */
+    public function connection(): Connection
+    {
+        return $this->connection;
+    }
+
+    /**
      * 建表。
      *
      * @param string $table 表名

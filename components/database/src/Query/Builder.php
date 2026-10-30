@@ -363,6 +363,67 @@ final class Builder
     }
 
     /**
+     * 原子自增（`SET col = col + ?`）。
+     *
+     * 为什么必须走 SQL 而不是"先读再写"：并发下读改写会丢更新
+     * （两个请求都读到 10，各自写 11，最终 11 而非 12）。
+     *
+     * @param string $column 列名
+     * @param int $step 步长
+     * @param array<string, mixed> $extra 同时更新的其他列
+     * @return int 受影响行数
+     */
+    public function increment(string $column, int $step = 1, array $extra = []): int
+    {
+        return $this->applyDelta($column, $step, $extra);
+    }
+
+    /**
+     * 原子自减。
+     *
+     * @param string $column 列名
+     * @param int $step 步长
+     * @param array<string, mixed> $extra 同时更新的其他列
+     * @return int 受影响行数
+     */
+    public function decrement(string $column, int $step = 1, array $extra = []): int
+    {
+        return $this->applyDelta($column, -$step, $extra);
+    }
+
+    /**
+     * 执行 `SET col = col ± ?`。
+     *
+     * @param string $column 列名
+     * @param int $delta 增量（负数为减）
+     * @param array<string, mixed> $extra 同时更新的其他列
+     * @return int 受影响行数
+     */
+    private function applyDelta(string $column, int $delta, array $extra): int
+    {
+        $this->assertIdentifier($column);
+
+        $sets = [sprintf('%s = %s + ?', $column, $column)];
+        $bindings = [$delta];
+
+        foreach ($extra as $name => $value) {
+            $this->assertIdentifier((string) $name);
+            $sets[] = $name . ' = ?';
+            $bindings[] = $value;
+        }
+
+        $sql = sprintf(
+            'UPDATE %s SET %s%s',
+            $this->table,
+            implode(', ', $sets),
+            $this->toWhereSql()
+        );
+
+        // SET 的绑定在前，WHERE 的绑定在后
+        return $this->connection->affect($sql, [...$bindings, ...$this->bindings()]);
+    }
+
+    /**
      * 是否存在匹配行。
      *
      * @return bool 存在返回 true

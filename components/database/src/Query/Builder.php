@@ -32,6 +32,9 @@ final class Builder
     /** @var list<string> 分组列 */
     private array $groups = [];
 
+    /** @var list<mixed> SELECT 子句里的绑定（selectRaw 的 ? 参数） */
+    private array $selectBindings = [];
+
     /** @var list<array{column: string, direction: string}> 排序 */
     private array $orders = [];
 
@@ -273,7 +276,7 @@ final class Builder
     {
         $sql = sprintf('SELECT COUNT(*) AS aggregate FROM %s%s', $this->table, $this->toWhereSql());
 
-        return (int) $this->connection->scalar($sql, $this->bindings());
+        return (int) $this->connection->scalar($sql, $this->whereBindings());
     }
 
     /**
@@ -469,6 +472,41 @@ final class Builder
     }
 
     /**
+     * 追加带绑定的 SELECT 表达式。
+     *
+     * `selectRaw()` 不能带参数，而搜索排序需要：
+     *
+     *   selectRawWith(
+     *       '(CASE WHEN title LIKE ? THEN 100 ELSE 0 END) + (CASE WHEN content LIKE ? THEN 10 ELSE 0 END) AS score',
+     *       ['%kw%', '%kw%']
+     *   )
+     *
+     * 绑定值仍走 PDO 占位符，不能拼进 SQL 字符串——那是注入入口。
+     *
+     * @param string $expression 表达式（含 ? 占位符）
+     * @param list<mixed> $bindings 绑定值（数量必须与占位符一致）
+     * @return self 当前构造器
+     * @throws InvalidArgumentException 占位符与绑定数量不符时抛出
+     */
+    public function selectRawWith(string $expression, array $bindings = []): self
+    {
+        $placeholders = substr_count($expression, '?');
+
+        if ($placeholders !== count($bindings)) {
+            throw new InvalidArgumentException(sprintf(
+                'selectRawWith 的占位符数量（%d）与绑定值数量（%d）不一致',
+                $placeholders,
+                count($bindings)
+            ));
+        }
+
+        $this->columns[] = $expression;
+        $this->selectBindings = [...$this->selectBindings, ...array_values($bindings)];
+
+        return $this;
+    }
+
+    /**
      * 分组。
      *
      * 注意：`paginate()` 内部的 count 不感知 GROUP BY，
@@ -634,7 +672,7 @@ final class Builder
         );
 
         // SET 的绑定在前，WHERE 的绑定在后
-        return $this->connection->affect($sql, [...$bindings, ...$this->bindings()]);
+        return $this->connection->affect($sql, [...$bindings, ...$this->whereBindings()]);
     }
 
     /**
@@ -779,7 +817,7 @@ final class Builder
             $this->toWhereSql()
         );
 
-        return $this->connection->affect($sql, [...array_values($data), ...$this->bindings()]);
+        return $this->connection->affect($sql, [...array_values($data), ...$this->whereBindings()]);
     }
 
     /**
@@ -934,6 +972,20 @@ final class Builder
      * @return list<mixed> 绑定值
      */
     private function bindings(): array
+    {
+        // SELECT 在 SQL 里位于 WHERE 之前，绑定顺序必须一致
+        return [...$this->selectBindings, ...$this->whereBindings()];
+    }
+
+    /**
+     * 仅 WHERE 的绑定。
+     *
+     * COUNT / UPDATE / DELETE 会重写 SELECT 部分，
+     * 不能再带上 selectBindings —— 否则绑定数多于占位符会直接报错。
+     *
+     * @return list<mixed> 绑定值
+     */
+    private function whereBindings(): array
     {
         $bindings = [];
 

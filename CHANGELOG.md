@@ -8,6 +8,37 @@
 
 - 待办见文档 18.3.0「当前验收状态」的缺口列表
 
+## [0.37.0] - 2026-10-30
+
+### 新增
+
+- `Builder::selectRawWith(string $expression, array $bindings)`：带绑定的 SELECT 表达式
+
+### 为什么需要它
+
+做加权搜索时，排序要把「标题命中」「摘要命中」「正文命中」算成分：
+
+```php
+selectRawWith(
+    '(CASE WHEN title LIKE ? THEN 100 ELSE 0 END) + (CASE WHEN content LIKE ? THEN 10 ELSE 0 END) AS score',
+    ['%kw%', '%kw%']
+)
+```
+
+`selectRaw()` 只能传死表达式，占位符没有绑定值可传——生成的 SQL 里 `?`
+永远匹配不到参数。而把关键词直接拼进 SQL 就是注入入口。
+
+实现要点：
+
+- 校验占位符数量与绑定值数量一致，不等直接抛异常（不静默错位）
+- `selectBindings` 排在 `whereBindings` 之前（SELECT 在 SQL 里位于 WHERE 之前）
+- `count` / `update` / `delete` 改用 `whereBindings()`，否则会多带 SELECT 的绑定
+
+### 使用提示
+
+`select('*')` 会被标识符校验拒绝（防注入）。取全部列**不要显式写**，
+默认就是 `*`；需要追加计算列时直接 `selectRawWith()` 即可。
+
 ## [0.36.1] - 2026-10-30
 
 ### 修复

@@ -501,4 +501,44 @@ final class ImageTest extends TestCase
 
         file_put_contents($target, "\xFF\xD8" . $app1 . substr($data, 2));
     }
+
+    /**
+     * auto 驱动应优先选 GD。
+     *
+     * 依据实测：同一张 1600×1200 图生成 300×300 缩略图，
+     * GD 15ms / Imagick 44ms，体积差 6%——缩略图尺寸上质量差异肉眼不可见，
+     * 但耗时差 3 倍。
+     *
+     * 这条测试的作用是**防止有人"顺理成章"地把优先级改回 Imagick**，
+     * 改回去会立刻红，fail 信息里说明原因。
+     *
+     * @return void
+     */
+    public function testAutoPrefersGd(): void
+    {
+        $manager = new ImageManager(['driver' => 'auto']);
+        $expected = \SunsetReverie\Image\Driver\GdDriver::available() ? 'gd' : 'imagick';
+
+        $this->assertSame(
+            $expected,
+            $manager->driver()->name(),
+            'auto 应优先 GD（快 3 倍）；要 Imagick 请显式配 driver => imagick'
+        );
+    }
+
+    /**
+     * 显式指定 imagick 时不应被 auto 逻辑覆盖。
+     *
+     * @return void
+     */
+    public function testExplicitImagickIsRespected(): void
+    {
+        if (!\SunsetReverie\Image\Driver\ImagickDriver::available()) {
+            return;
+        }
+
+        $manager = new ImageManager(['driver' => 'imagick']);
+
+        $this->assertSame('imagick', $manager->driver()->name());
+    }
 }

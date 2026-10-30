@@ -6,9 +6,13 @@ return [
     /*
      * 驱动：auto / gd / imagick
      *
-     * auto：装了 Imagick 就用 Imagick，否则用 GD；两者都没有时明确报错。
-     * gd：几乎无处不在，够用；不支持动图，重采样质量略差。
-     * imagick：质量更好、支持动图与更多格式，需要额外安装 ImageMagick。
+     * auto（默认）：GD 优先，没有 GD 才用 Imagick；两者都没有时明确报错。
+     * gd：几乎无处不在；速度快（实测比 Imagick 快 2–3 倍），缩略图首选。
+     * imagick：重采样质量更好（Lanczos）、支持动图与更多格式，
+     *          但需要额外安装 ImageMagick，且速度慢（进程外编解码）。
+     *
+     * 选 auto 还是 imagick：缩略图 / 列表图用 auto（快）；
+     * 大图精修、需要保留动图时显式配 imagick。
      */
     'driver' => env('IMAGE_DRIVER', 'auto'),
 

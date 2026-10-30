@@ -43,6 +43,7 @@ final class ConsoleKernel
             'config:clear' => $this->configClear(),
             'key:generate' => $this->keyGenerate($args),
             'env:check' => $this->envCheck(),
+            'lint:architecture' => $this->lintArchitecture($args),
             'optimize' => $this->optimize(),
             'optimize:clear' => $this->optimizeClear(),
             'migrate' => $this->migrate(),
@@ -604,6 +605,62 @@ PHP;
         return 0;
     }
 
+    // ── lint ──────────────────────────────────────────────────────────
+
+    /**
+     * lint:architecture：架构检查。
+     *
+     * @param list<string> $args 参数（--json 机器可读）
+     * @return int 退出码（有违规返回 1）
+     */
+    private function lintArchitecture(array $args): int
+    {
+        $checker = new \SunsetReverie\Console\Lint\ArchitectureChecker($this->app->basePath());
+        $results = $checker->run();
+        $failed = 0;
+
+        if (in_array('--json', $args, true)) {
+            $payload = array_map(static fn (array $result): array => [
+                'id' => $result['id'],
+                'ok' => $result['ok'],
+                'summary' => $result['summary'],
+                'violations' => $result['violations'],
+            ], $results);
+
+            $this->line((string) json_encode($payload, JSON_UNESCAPED_UNICODE));
+
+            foreach ($results as $result) {
+                if (!$result['ok']) {
+                    $failed++;
+                }
+            }
+
+            return $failed === 0 ? 0 : 1;
+        }
+
+        $this->line('架构检查');
+
+        foreach ($results as $result) {
+            if ($result['ok']) {
+                $this->line(sprintf('  %-7s OK   %s', $result['id'], $result['summary']));
+
+                continue;
+            }
+
+            $failed++;
+            $this->line(sprintf('  %-7s FAIL %s', $result['id'], $result['summary']));
+
+            foreach ($result['violations'] as $violation) {
+                $this->line('             ' . $violation);
+            }
+        }
+
+        $this->line('');
+        $this->line($failed === 0 ? '全部通过' : sprintf('%d 项未通过', $failed));
+
+        return $failed === 0 ? 0 : 1;
+    }
+
     // ── 运维命令 ──────────────────────────────────────────────────────
 
     /**
@@ -1032,6 +1089,7 @@ PHP;
         $this->line('  config:clear  清除配置缓存');
         $this->line('  key:generate  生成 APP_KEY 并写入 .env（--show 只打印）');
         $this->line('  env:check     环境自检（PHP/扩展/目录/密钥/调试开关）');
+        $this->line('  lint:architecture  架构检查（4 条依赖规则，CI 可用）');
         $this->line('  optimize      一键缓存（配置 + 路由）');
         $this->line('  optimize:clear 一键清除缓存');
         $this->line('  migrate       执行未运行的迁移');

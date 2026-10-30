@@ -8,6 +8,91 @@
 
 - 待办见文档 18.3.0「当前验收状态」的缺口列表
 
+## [0.41.0] - 2026-10-30
+
+### 新增
+
+- `scripts/ci.sh`：本地 CI，一条命令跑完 环境 → 语法 → 测试 → 架构 → 静态分析 → 方言
+- `.github/workflows/ci.yml`：三个 job（test 矩阵 / static / database）
+- `tests/Integration/DialectContractTest`：同一套 4 个断言在 SQLite / MySQL / PostgreSQL 上跑
+
+### 修复
+
+- **`selectRaw()` 首次追加时清掉默认的 `*`**
+
+`Builder` 默认 `$columns = ['*']`，而 `selectRaw()` 是追加语义，于是
+`table('t')->selectRaw('COUNT(*) AS n')->groupBy('x')` 生成
+`SELECT *, COUNT(*) AS n FROM t GROUP BY x`。
+
+MySQL 在 `ONLY_FULL_GROUP_BY` 关闭时容忍，**PostgreSQL 直接报**
+`column "t.id" must appear in the GROUP BY clause`。
+
+这个差异只有真跑 PG 才会暴露——跨库契约测试抓到的第一例。
+
+### 说明
+
+之前「三库测试」是手工在临时项目验证的，PG 服务一重启就没了。
+现在由 CI 的 service 容器每次新建，且测试读 `SR_TEST_DB` 环境变量。
+
+## [0.40.0] - 2026-10-30
+
+### 变更
+
+架构检查从「4 条」补齐到「8 项」，并修正文档与实现的语义错位。
+
+文档 16.3.1 承诺的 8 条里，有 2 条**前提在框架里根本不存在**：
+没有 `Contracts\` 目录（契约以 `XxxInterface` 平铺在各组件内），
+也没有 `domain_providers` 配置项。而「驱动分支数必须为 0」也不现实——
+任何驱动注册都需要默认分支或注册表。
+
+重写后：
+
+| 编号 | 检查项 |
+| --- | --- |
+| ARCH-1～4 | 依赖方向（原有，措辞对齐实现） |
+| ARCH-5/6 | Vendor 共存（标 N/A，由 `VendorCoexistTest` 覆盖） |
+| ARCH-7 | Facade `@method` 与底层类一致（新增） |
+| ARCH-8 | 组件目录与 autoload 映射表一致（新增） |
+
+### 修复
+
+ARCH-8 立刻报出 `autoload.php` 登记了 `Console => components/console`，
+该目录不存在。注册处有 `is_dir()` 保护所以当前无害，但一旦有人真建了那个目录，
+就会**静默覆盖**内核的 `SunsetReverie\Console\*` 映射。已删除该幽灵条目。
+
+## [0.39.0] - 2026-10-30
+
+### 新增
+
+- `phpstan.neon`（level 6）+ `.gitignore` 忽略 `phpstan.phar`
+- 文档 `docs/v1.0-checklist.md`：13 条门禁的进度与做法
+
+### 修复
+
+首次跑 PHPStan 报 65 个错误，全部处理。其中三个是真 bug：
+
+- **`Worker::$sleepSeconds` 只写不读**：常驻模式在 CLI 里硬编码 `sleep(1)`，
+  构造参数形同虚设。新增 `Worker::work()` 返回 Generator，把节奏收回 Worker 层
+- **`LogMailer` 调用不存在的 `LogManager::info()`**：靠 `__call` 兜住没崩，
+  但静态分析在该类上完全失效。改为显式 `channel()->info()`
+- **`ApiSurfaceTest` 里两个测试方法被误粘进别的类**：
+  `testAuthUserWithoutLogin` 分别出现在 `MarkerMiddleware` 和 `DeniedRequest` 内部，
+  `$this` 指向中间件而非 TestCase，`assertNull` 等调用全部落空。
+  测试框架发现不了（它只扫 `test` 开头的方法，不检查方法在哪个类里）
+
+其他修正：
+- `insertGetId()` 的 `@return string` 与实现（int）不符
+- `Pipeline::through()` 注解漏了「实例」形态
+- Facade 的 `@method` 用裸 `array`，补成 `list<mixed>` / `array<string, mixed>`
+- `EnvParseException` 的 `readonly $file/$line` 覆盖了 `Exception` 同名属性，
+  会让 `getFile()/getLine()` 返回 .env 位置而非异常抛出位置
+- `tempnam()` 可能返回 `false` 被直接传给 `ImageResult(string)`（两个图片驱动）
+
+### 说明
+
+PHPStan 能拦住的 5 个历史 bug 里它拦住了 4 个，
+包括「`sum()` 返回 string 导致 TypeError」这类只有运行到才会炸的问题。
+
 ## [0.38.0] - 2026-10-30
 
 ### 新增

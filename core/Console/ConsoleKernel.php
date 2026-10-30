@@ -1860,7 +1860,7 @@ PHP;
         $this->line('  config:clear  清除配置缓存');
         $this->line('  key:generate  生成 APP_KEY 并写入 .env（--show 只打印）');
         $this->line('  env:check     环境自检（PHP/扩展/目录/密钥/调试开关）');
-        $this->line('  lint:architecture  架构检查（4 条依赖规则，CI 可用）');
+        $this->line('  lint:architecture  架构检查（8 项：依赖方向 / Facade 一致性 / 组件注册）');
         $this->line('  lint:isolation     域隔离检查（3 条分层规则，CI 可用）');
         $this->line('  optimize      一键缓存（配置 + 路由）');
         $this->line('  optimize:clear 一键清除缓存');

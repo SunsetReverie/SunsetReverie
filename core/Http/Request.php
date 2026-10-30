@@ -164,7 +164,31 @@ final class Request
     }
 
     /**
-     * 读取输入（优先表单，其次查询）。
+     * 读取请求体字段（表单或 JSON）。
+     *
+     * @param string|null $key 字段名；null 表示返回整个请求体
+     * @param mixed $default 默认值
+     * @return mixed 字段值或数组
+     */
+    public function post(?string $key = null, mixed $default = null): mixed
+    {
+        $data = $this->bodyData();
+
+        return $key === null ? $data : ($data[$key] ?? $default);
+    }
+
+    /**
+     * 合并查询参数与请求体（查询参数在前，请求体覆盖同名键）。
+     *
+     * @return array<string, mixed> 全部输入
+     */
+    public function all(): array
+    {
+        return array_merge($this->query, $this->bodyData());
+    }
+
+    /**
+     * 读取输入（请求体优先，其次查询参数）。
      *
      * @param string $key 字段名
      * @param mixed $default 默认值
@@ -172,7 +196,40 @@ final class Request
      */
     public function input(string $key, mixed $default = null): mixed
     {
-        return $this->post[$key] ?? $this->query[$key] ?? $default;
+        $data = $this->bodyData();
+
+        return $data[$key] ?? $this->query[$key] ?? $default;
+    }
+
+    /**
+     * 解析请求体：表单优先，其次 JSON。
+     *
+     * @return array<string, mixed> 请求体数据
+     */
+    private function bodyData(): array
+    {
+        if ($this->post !== []) {
+            return $this->post;
+        }
+
+        if ($this->rawBody === '') {
+            return [];
+        }
+
+        if ($this->isJson()) {
+            return $this->json();
+        }
+
+        // 表单编码：真实请求由 PHP 填入 $_POST，这里覆盖手工构造 Request 的场景
+        $contentType = strtolower((string) $this->header('content-type', ''));
+
+        if (str_contains($contentType, 'application/x-www-form-urlencoded')) {
+            parse_str($this->rawBody, $data);
+
+            return $data;
+        }
+
+        return [];
     }
 
     /**

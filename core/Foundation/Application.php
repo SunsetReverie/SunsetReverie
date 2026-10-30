@@ -62,7 +62,7 @@ use SunsetReverie\Validation\Validator;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.23.0';
+    public const VERSION = '0.24.0';
 
     private static ?self $instance = null;
 
@@ -429,6 +429,9 @@ final class Application
      */
     private function bootstrap(): void
     {
+        // 项目依赖最先加载：配置文件里也可能用到第三方类
+        $this->loadVendorDependencies();
+
         $this->loadEnvironment();
         $this->registerAppNamespace();
         $this->loadConfiguration();
@@ -487,6 +490,25 @@ final class Application
 
         $this->providers->register($providers);
         $this->providers->boot();
+    }
+
+    /**
+     * 加载项目依赖（Composer 的 vendor/autoload.php）。
+     *
+     * 框架自身零依赖，但业务项目很可能装了第三方库。
+     * 这里"存在才加载"，避免无 vendor 的环境报错；
+     * 与 core/Foundation/autoload.php 里的 SR_BASE_PATH 分支配合，
+     * 两处都 require_once，不会重复加载。
+     *
+     * @return void
+     */
+    private function loadVendorDependencies(): void
+    {
+        $autoload = $this->basePath('vendor/autoload.php');
+
+        if (is_file($autoload)) {
+            require_once $autoload;
+        }
     }
 
     /**

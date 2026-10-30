@@ -128,6 +128,20 @@ if (is_dir($sunsetBasePath . '/app')) {
 
 $sunsetLoader->register();
 
+/*
+ * 项目依赖（Composer）：存在 vendor/autoload.php 时挂上。
+ *
+ * 分两处处理：
+ * 1. 这里用 SR_BASE_PATH（CLI 与 serve 场景会设置）；
+ * 2. Application::boot() 里再用 basePath 兜底（HTTP 场景，入口知道项目根）。
+ * 两处都用 require_once，不会重复加载。
+ */
+$sunsetProjectPath = getenv('SR_BASE_PATH');
+
+if (is_string($sunsetProjectPath) && $sunsetProjectPath !== '' && is_file($sunsetProjectPath . '/vendor/autoload.php')) {
+    require_once $sunsetProjectPath . '/vendor/autoload.php';
+}
+
 // ── 全局辅助函数（独立文件，无命名空间）─────────────────────────────
 require __DIR__ . '/../Support/helpers.php';
 

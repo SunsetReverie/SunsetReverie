@@ -8,6 +8,73 @@
 
 - 待办见文档 18.3.0「当前验收状态」的缺口列表
 
+## [0.27.0] - 2026-10-30
+
+### 修复
+
+- `RedisStore::flush()` 在前缀为空时会把 pattern 拼成 `*`，等于**清空整个 Redis 库**
+  （同一实例通常还跑着别的应用）。现在直接抛 `CacheException` 并提示去配 `cache.prefix`
+
+### 记录
+
+Redis 的跨 SAPI 行为已实测（与 APCu 对照）：
+
+| 场景 | Redis | APCu |
+| --- | --- | --- |
+| FPM 跨 worker 共享 | ✅ | ✅ |
+| CLI 与 FPM 共享 | ✅（同一个 Redis） | ❌（不同内存段） |
+
+CLI 读不到 FPM 写的值，不是 Redis 不共享，而是**域前缀不同**：
+数据在 `sr:web:key`，CLI 查的是 `sr:key`。补齐 `DomainContext` 后即可读到。
+
+## [0.26.1] - 2026-10-30
+
+### 新增
+
+- APCu 驱动实测通过：跨 FPM worker 共享（worker A 写、worker B 读）
+- 测试覆盖两条分支：不可用时明确报错、可用时完整读写
+
+### 变更
+
+- `sr cache:clear` 在默认驱动为 `apcu` 时提示：CLI 与 FPM 使用不同内存段，
+  该命令清不到 FPM 已写入的条目
+- `ApcuStore` 类注释补齐两条实测限制：CLI 不共享内存段、`apc.enable_cli` 需显式开启
+
+### 说明
+
+`apc.enable_cli` 是 `PHP_INI_SYSTEM`，无法 `ini_set`，
+CLI 跑真实分支需 `php -d apc.enable_cli=1 tests/run.php`。
+
+## [0.26.0] - 2026-10-30
+
+### 修复
+
+首次用真实 PostgreSQL 18.6 跑框架，迁移连续失败三次：
+
+- `migrations` 表的 `executed_at` 用 `DATETIME`（MySQL 语法），PG 无此类型
+  → 按驱动改用 `TIMESTAMP`。原代码 `driver === 'sqlite' ? 'DATETIME' : 'DATETIME'`
+  两边一样，是从未被执行过的死分支
+- `boolean` 列默认值生成为 `1`/`0`，PG 的 `BOOLEAN DEFAULT 1` 报类型不匹配
+  → 改为 `TRUE`/`FALSE`（三种数据库都接受）
+- `ConnectionManager` 仍用旧签名 `new ConnectionException($msg, 0, $e)`
+  → v0.23 改了构造签名但漏改调用点，连不上库时抛 `TypeError`
+
+### 新增
+
+- `tests/Integration/PostgresDialectTest`：建表方言 / 类型映射 / 事务回滚，
+  无 PG 环境时自动跳过
+
+## [0.25.0] - 2026-10-30
+
+### 新增
+
+- `tests/Unit/DataFormatContractTest`：DF-1～DF-6 数据格式契约（11 个用例）
+  - 框架保证：布尔输出 `true`/`false`、空数组 `[]` 与空对象 `{}` 区分、
+    `null` 字段保留键、不可序列化数据抛 `JsonException`
+  - 业务责任（测试记录边界）：大整数 ID 转 string、金额用 int、枚举用字符串
+- `CHANGELOG.md`（32 个版本按 Keep a Changelog 整理）
+- `LICENSE`（MIT）
+
 ## [0.24.0] - 2026-10-30
 
 ### 新增

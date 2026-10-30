@@ -282,4 +282,107 @@ final class DatabaseTest extends TestCase
             static fn () => $manager->connection()
         );
     }
+
+    /**
+     * 聚合函数：sum / avg / max / min。
+     *
+     * @return void
+     */
+    public function testAggregateFunctions(): void
+    {
+        $this->db->affect('CREATE TABLE orders (id INTEGER PRIMARY KEY AUTOINCREMENT, amount INTEGER NOT NULL)');
+
+        foreach ([100, 200, 300] as $amount) {
+            $this->db->table('orders')->insert(['amount' => $amount]);
+        }
+
+        $this->assertSame(600, $this->db->table('orders')->sum('amount'), 'SUM 应转成数值而非字符串');
+        $this->assertSame(200.0, $this->db->table('orders')->avg('amount'));
+        $this->assertSame(300, (int) $this->db->table('orders')->max('amount'));
+        $this->assertSame(100, (int) $this->db->table('orders')->min('amount'));
+    }
+
+    /**
+     * 空结果集时聚合应返回安全默认值（而不是 null 或报错）。
+     *
+     * @return void
+     */
+    public function testAggregateOnEmptyResult(): void
+    {
+        $this->db->affect('CREATE TABLE empty_items (id INTEGER PRIMARY KEY AUTOINCREMENT, amount INTEGER)');
+
+        $this->assertSame(0, $this->db->table('empty_items')->sum('amount'));
+        $this->assertSame(0, $this->db->table('empty_items')->avg('amount'));
+        $this->assertNull($this->db->table('empty_items')->max('amount'));
+    }
+
+    /**
+     * selectRaw + groupBy：按状态分组计数。
+     *
+     * @return void
+     */
+    public function testGroupByWithAggregate(): void
+    {
+        $rows = $this->db->table('users')
+            ->selectRaw('status', 'COUNT(*) AS total')
+            ->groupBy('status')
+            ->get();
+
+        $counts = [];
+
+        foreach ($rows as $row) {
+            $counts[(string) $row['status']] = (int) $row['total'];
+        }
+
+        $this->assertSame(['active' => 2, 'banned' => 1], $counts);
+    }
+
+    /**
+     * groupByRaw 支持表达式分组（如按日期）。
+     *
+     * @return void
+     */
+    public function testGroupByRaw(): void
+    {
+        $this->db->affect('CREATE TABLE events (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL)');
+
+        foreach (['2026-10-29', '2026-10-29', '2026-10-30'] as $day) {
+            $this->db->table('events')->insert(['day' => $day]);
+        }
+
+        // sqlite 的 substr 与 mysql 的 DATE() 等价地演示"表达式分组"
+        $rows = $this->db->table('events')
+            ->selectRaw('substr(day, 1, 10) AS d', 'COUNT(*) AS total')
+            ->groupByRaw('substr(day, 1, 10)')
+            ->orderBy('d', 'asc')
+            ->get();
+
+        $this->assertSame(2, count($rows));
+        $this->assertSame('2026-10-29', (string) $rows[0]['d']);
+        $this->assertSame(2, (int) $rows[0]['total']);
+    }
+
+    /**
+     * 聚合列可直接用于排序（标签排行场景）。
+     *
+     * @return void
+     */
+    public function testOrderByAggregateColumn(): void
+    {
+        $this->db->affect('CREATE TABLE tags_ref (id INTEGER PRIMARY KEY AUTOINCREMENT, tag TEXT NOT NULL)');
+
+        foreach (['php', 'php', 'php', 'go', 'go', 'rust'] as $tag) {
+            $this->db->table('tags_ref')->insert(['tag' => $tag]);
+        }
+
+        $rows = $this->db->table('tags_ref')
+            ->selectRaw('tag', 'COUNT(*) AS total')
+            ->groupBy('tag')
+            ->orderBy('total', 'desc')
+            ->get();
+
+        $this->assertSame('php', (string) $rows[0]['tag']);
+        $this->assertSame(3, (int) $rows[0]['total']);
+        $this->assertSame('rust', (string) $rows[2]['tag']);
+    }
 }

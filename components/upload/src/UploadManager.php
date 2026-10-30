@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SunsetReverie\Upload;
 
+use SunsetReverie\Api\DomainContext;
 use SunsetReverie\Http\UploadedFile;
 use SunsetReverie\Upload\Exception\UploadException;
 use SunsetReverie\Upload\Storage\StorageInterface;
@@ -46,10 +47,12 @@ final class UploadManager
     /**
      * @param array<string, mixed> $config 上传配置
      * @param StorageInterface $storage 存储驱动
+     * @param DomainContext|null $domainContext 域上下文（配置了域时自动按域分目录）
      */
     public function __construct(
         private readonly array $config,
         private readonly StorageInterface $storage,
+        private readonly ?DomainContext $domainContext = null,
     ) {
     }
 
@@ -199,6 +202,13 @@ final class UploadManager
 
         if ($directory !== '' && preg_match('/^[A-Za-z0-9_-]+(\/[A-Za-z0-9_-]+)*$/', $directory) !== 1) {
             throw new UploadException('非法的上传目录');
+        }
+
+        // 域隔离：admin 与 app 上传的文件落在不同物理目录
+        $domain = $this->domainContext?->name() ?? '';
+
+        if ($domain !== '' && ($this->config['isolate_by_domain'] ?? true)) {
+            $directory = $domain . ($directory === '' ? '' : '/' . $directory);
         }
 
         return ($directory === '' ? '' : $directory . '/') . $date . '/' . $name;

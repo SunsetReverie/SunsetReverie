@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SunsetReverie\Api\Middleware;
 
 use Closure;
+use SunsetReverie\Api\DomainContext;
 use SunsetReverie\Api\DomainResolver;
 use SunsetReverie\Http\Middleware\MiddlewareInterface;
 use SunsetReverie\Http\Request;
@@ -25,9 +26,12 @@ final class ResolveDomain implements MiddlewareInterface
 
     /**
      * @param DomainResolver $resolver 域解析器
+     * @param DomainContext $context 域上下文（供缓存/上传/错误码读取）
      */
-    public function __construct(private readonly DomainResolver $resolver)
-    {
+    public function __construct(
+        private readonly DomainResolver $resolver,
+        private readonly DomainContext $context,
+    ) {
     }
 
     /**
@@ -36,6 +40,7 @@ final class ResolveDomain implements MiddlewareInterface
     public function handle(Request $request, Closure $next): Response
     {
         $domain = $this->resolver->resolve($request);
+        $this->context->set($domain);
 
         return $next($request
             ->withAttribute(self::ATTRIBUTE, $domain->name)

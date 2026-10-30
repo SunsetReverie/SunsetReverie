@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SunsetReverie\Cache;
 
 use Closure;
+use SunsetReverie\Api\DomainContext;
 use SunsetReverie\Cache\Driver\ArrayStore;
 use SunsetReverie\Cache\Driver\FileStore;
 use SunsetReverie\Cache\Exception\CacheException;
@@ -26,10 +27,12 @@ final class CacheManager
     /**
      * @param array<string, mixed> $config 缓存配置（default + prefix + stores）
      * @param string $basePath 项目根目录（文件缓存路径解析用）
+     * @param DomainContext|null $domainContext 域上下文（配置了域时自动加前缀隔离）
      */
     public function __construct(
         private readonly array $config,
         private readonly string $basePath = '',
+        private readonly ?DomainContext $domainContext = null,
     ) {
     }
 
@@ -114,7 +117,14 @@ final class CacheManager
             return ($this->extensions[$driver])($config);
         }
 
+        // 键前缀：basePrefix + {domain}: ，四个域共用一份缓存也不会互相覆盖
         $prefix = (string) ($this->config['prefix'] ?? '');
+        $domain = $this->domainContext?->name() ?? '';
+
+        if ($domain !== '' && ($this->config['isolate_by_domain'] ?? true)) {
+            $prefix .= $domain . ':';
+        }
+
         $ttl = (int) ($config['ttl'] ?? 3600);
 
         return match ($driver) {

@@ -12,6 +12,7 @@ use SunsetReverie\Config\Env;
 use SunsetReverie\Config\EnvLoader;
 use SunsetReverie\Auth\AuthManager;
 use SunsetReverie\Auth\AuthServiceProvider;
+use SunsetReverie\Api\DomainContext;
 use SunsetReverie\Api\DomainRegistry;
 use SunsetReverie\Api\DomainResolver;
 use SunsetReverie\Api\Middleware\ResolveDomain;
@@ -56,7 +57,7 @@ use SunsetReverie\Validation\Validator;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '0.11.0';
+    public const VERSION = '0.12.0';
 
     private static ?self $instance = null;
 
@@ -80,6 +81,8 @@ final class Application
 
     private DomainRegistry $domains;
 
+    private DomainContext $domainContext;
+
     /**
      * @param string $basePath 项目根目录
      */
@@ -91,6 +94,7 @@ final class Application
         $this->config = new Config();
         $this->errorHandler = new ErrorHandler();
         $this->providers = new ProviderRepository($this->container);
+        $this->domainContext = new DomainContext();
     }
 
     /**
@@ -187,6 +191,16 @@ final class Application
     public function cache(?string $name = null): CacheStoreInterface
     {
         return $this->container->get(CacheManager::class)->store($name);
+    }
+
+    /**
+     * 获取当前域上下文（错误码段位 / 缓存前缀 / 上传目录）。
+     *
+     * @return DomainContext 域上下文
+     */
+    public function domain(): DomainContext
+    {
+        return $this->domainContext;
     }
 
     /**
@@ -399,6 +413,7 @@ final class Application
         $this->container->instance(Router::class, $this->router);
         $this->container->instance(Config::class, $this->config);
         $this->container->instance(DomainRegistry::class, $this->domains);
+        $this->container->instance(DomainContext::class, $this->domainContext);
         $this->container->instance(
             DomainResolver::class,
             new DomainResolver(

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SunsetReverie\Cache;
 
+use SunsetReverie\Api\DomainContext;
 use SunsetReverie\Config\Config;
 use SunsetReverie\Container\Container;
 use SunsetReverie\Foundation\Application;
@@ -30,6 +31,7 @@ final class CacheServiceProvider extends ServiceProvider
             return new CacheManager(
                 (array) $config->get('cache', []),
                 $app->basePath(),
+                $container->get(DomainContext::class),
             );
         });
 

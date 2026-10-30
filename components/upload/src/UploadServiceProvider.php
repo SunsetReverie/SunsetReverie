@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SunsetReverie\Upload;
 
+use SunsetReverie\Api\DomainContext;
 use SunsetReverie\Config\Config;
 use SunsetReverie\Container\Container;
 use SunsetReverie\Foundation\Application;
@@ -34,7 +35,11 @@ final class UploadServiceProvider extends ServiceProvider
             $disk = (string) ($uploadConfig['disk'] ?? 'local');
             $diskConfig = (array) ($uploadConfig['disks'][$disk] ?? []);
 
-            return new UploadManager($uploadConfig, $this->createStorage($diskConfig, $app->basePath()));
+            return new UploadManager(
+                $uploadConfig,
+                $this->createStorage($diskConfig, $app->basePath()),
+                $container->get(DomainContext::class),
+            );
         });
 
         $this->container->bind('upload', UploadManager::class);

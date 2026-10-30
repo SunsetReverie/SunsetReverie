@@ -97,4 +97,38 @@ final class RouterTest extends TestCase
             fn () => $this->router->get('/health', static fn (): array => [])
         );
     }
+
+    /**
+     * 路由参数应做 URL 解码（中文 slug 场景）。
+     *
+     * 路径保持编码形式参与匹配，取出的参数必须还原；
+     * 否则前端 encodeURIComponent 之后，slugs 拿去查库永远匹配不到。
+     *
+     * @return void
+     */
+    public function testDecodesRouteParameters(): void
+    {
+        $router = new Router();
+        $router->get('/posts/{slug}', static fn (): array => [], 'post.show');
+
+        $encoded = rawurlencode('新写的文章 · 验证四端');
+        $matched = $router->dispatch('GET', '/posts/' . $encoded);
+
+        $this->assertSame('新写的文章 · 验证四端', $matched['params']['slug']);
+    }
+
+    /**
+     * 路径里的 + 是字面加号，不应被当作空格。
+     *
+     * @return void
+     */
+    public function testKeepsPlusAsLiteral(): void
+    {
+        $router = new Router();
+        $router->get('/tags/{name}', static fn (): array => [], 'tag.show');
+
+        $matched = $router->dispatch('GET', '/tags/c%2B%2B');
+
+        $this->assertSame('c++', $matched['params']['name']);
+    }
 }

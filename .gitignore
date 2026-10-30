@@ -54,3 +54,6 @@ build/
 *.tar.gz
 *.zip
 !skeleton/**/*.zip
+
+# PHPStan 单文件（开发工具，不入库）
+/phpstan.phar

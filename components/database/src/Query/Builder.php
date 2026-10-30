@@ -29,6 +29,9 @@ final class Builder
     /** @var list<array{sql: string, bindings: list<mixed>, boolean: string}> where 片段 */
     private array $wheres = [];
 
+    /** @var list<string> 分组列 */
+    private array $groups = [];
+
     /** @var list<array{column: string, direction: string}> 排序 */
     private array $orders = [];
 
@@ -363,6 +366,128 @@ final class Builder
     }
 
     /**
+     * 追加原始 SELECT 表达式（用于聚合列）。
+     *
+     * **只应传入代码里写死的表达式**，不要拼接用户输入——
+     * 这个方法跳过标识符校验，是唯一的注入入口。
+     *
+     * @param string ...$expressions 表达式（如 `COUNT(*) AS total`）
+     * @return self 当前构造器
+     */
+    public function selectRaw(string ...$expressions): self
+    {
+        foreach ($expressions as $expression) {
+            $this->columns[] = $expression;
+        }
+
+        return $this;
+    }
+
+    /**
+     * 分组。
+     *
+     * 注意：`paginate()` 内部的 count 不感知 GROUP BY，
+     * 分组查询请用 `get()` 自己处理分页。
+     *
+     * @param string ...$columns 分组列
+     * @return self 当前构造器
+     */
+    public function groupBy(string ...$columns): self
+    {
+        foreach ($columns as $column) {
+            $this->assertIdentifier($column);
+            $this->groups[] = $column;
+        }
+
+        return $this;
+    }
+
+    /**
+     * 按表达式分组（如 `DATE(created_at)`）。
+     *
+     * 同样**只接受代码里写死的表达式**，不要拼接用户输入。
+     *
+     * @param string ...$expressions 表达式
+     * @return self 当前构造器
+     */
+    public function groupByRaw(string ...$expressions): self
+    {
+        foreach ($expressions as $expression) {
+            $this->groups[] = $expression;
+        }
+
+        return $this;
+    }
+
+    /**
+     * 求和（终结方法，直接返回结果）。
+     *
+     * @param string $column 列名
+     * @return int|float 合计（无数据时为 0）
+     */
+    public function sum(string $column): int|float
+    {
+        return $this->aggregate('SUM', $column) ?? 0;
+    }
+
+    /**
+     * 求平均（终结方法）。
+     *
+     * @param string $column 列名
+     * @return int|float 均值（无数据时为 0）
+     */
+    public function avg(string $column): int|float
+    {
+        $value = $this->aggregate('AVG', $column);
+
+        return $value === null ? 0 : round((float) $value, 2);
+    }
+
+    /**
+     * 求最大值（终结方法）。
+     *
+     * @param string $column 列名
+     * @return mixed 最大值（无数据时为 null）
+     */
+    public function max(string $column): mixed
+    {
+        return $this->aggregate('MAX', $column);
+    }
+
+    /**
+     * 求最小值（终结方法）。
+     *
+     * @param string $column 列名
+     * @return mixed 最小值（无数据时为 null）
+     */
+    public function min(string $column): mixed
+    {
+        return $this->aggregate('MIN', $column);
+    }
+
+    /**
+     * 执行聚合函数。
+     *
+     * @param string $function 聚合函数名（内部常量）
+     * @param string $column 列名
+     * @return mixed 结果
+     */
+    private function aggregate(string $function, string $column): mixed
+    {
+        $this->assertIdentifier($column);
+
+        $sql = sprintf(
+            'SELECT %s(%s) FROM %s%s',
+            $function,
+            $column,
+            $this->table,
+            $this->toWhereSql()
+        );
+
+        return $this->connection->scalar($sql, $this->bindings());
+    }
+
+    /**
      * 原子自增（`SET col = col + ?`）。
      *
      * 为什么必须走 SQL 而不是"先读再写"：并发下读改写会丢更新
@@ -551,10 +676,11 @@ final class Builder
     private function toSelectSql(): string
     {
         $sql = sprintf(
-            'SELECT %s FROM %s%s%s',
+            'SELECT %s FROM %s%s%s%s',
             implode(', ', $this->columns),
             $this->table,
             $this->toWhereSql(),
+            $this->groups === [] ? '' : ' GROUP BY ' . implode(', ', $this->groups),
             $this->toOrderSql()
         );
 

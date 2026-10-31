@@ -71,6 +71,13 @@ build/
 # GitHub 配置：只发布 Actions 工作流（部署文档站用），其余本地保留
 /.github/*
 !/.github/workflows/
+
+# ci.yml 暂不发布：
+# 它的 on.push 会让 GitHub 每次推代码都跑一遍，而它依赖的 scripts/ci.sh
+# 属于本地工具（不入库），推上去必然失败。
+# 本地检查已经覆盖了同样的内容，等以后真要上 GitHub CI 再放行这一行。
+/.github/workflows/ci.yml
+
 /phpstan.neon
 /scripts/
 /CONTRIBUTING.md

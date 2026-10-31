@@ -2,8 +2,8 @@
 layout: home
 
 hero:
-  name: 夕梦
-  text: 零依赖的 PHP 微服务框架
+  name: 夕梦 SunsetReverie
+  text: 轻量 PHP 微服务框架
   tagline: 多 API 域隔离 · 组件可替换 · 无 ORM<br>为「一个人维护的中型后端」而设计
   image:
     src: /logo.svg

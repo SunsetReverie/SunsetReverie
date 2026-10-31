@@ -137,4 +137,71 @@ final class ReleaseConsistencyTest extends TestCase
             '帮助文案还在说「4 条依赖规则」，实际已是 8 项'
         );
     }
+    /**
+     * 升级指南标注的「适用版本」必须与 VERSION 一致。
+     *
+     * 这是个特别容易忘的地方：发版时改了 VERSION 和 CHANGELOG，
+     * 但升级指南开头那句「适用版本」还停在上一个版本——
+     * v1.0.0-beta.1 发布时就漏了，仍是 0.45.0，
+     * 读者会以为这份指南没覆盖当前版本。
+     *
+     * @return void
+     */
+    public function testUpgradeGuideStatesCurrentVersion(): void
+    {
+        $path = $this->root . '/docs/handbook/guide/upgrade.md';
+
+        if (!is_file($path)) {
+            // 文档站未随仓库发布时跳过（内部仓库形态）
+            return;
+        }
+
+        $content = (string) file_get_contents($path);
+
+        preg_match('/适用版本：\*\*([^*]+)\*\*/u', $content, $matched);
+
+        // 用 fail() 而不是 assertTrue(isset())：前者返回 never，
+        // 静态分析才会认为 $matched[1] 一定存在（assert 不收窄类型）
+        if (!isset($matched[1])) {
+            $this->fail('升级指南缺少「适用版本」标注');
+        }
+
+        $this->assertSame(
+            Application::VERSION,
+            $matched[1],
+            sprintf(
+                '升级指南写的适用版本是 %s，但框架是 %s。发版时忘了同步这一行。',
+                $matched[1],
+                Application::VERSION
+            )
+        );
+    }
+
+    /**
+     * SECURITY.md 的支持版本表必须覆盖当前主版本。
+     *
+     * 同样是发版时容易漏的：表格里还写着 0.45.x（当前），
+     * 实际早已是 1.0.x。
+     *
+     * @return void
+     */
+    public function testSecurityDocCoversCurrentMajor(): void
+    {
+        $path = $this->root . '/SECURITY.md';
+
+        if (!is_file($path)) {
+            return;
+        }
+
+        $major = explode('.', Application::VERSION)[0];
+        $content = (string) file_get_contents($path);
+
+        $this->assertTrue(
+            str_contains($content, $major . '.'),
+            sprintf(
+                'SECURITY.md 的支持版本表里找不到 %s.x，可能还停在旧的大版本',
+                $major
+            )
+        );
+    }
 }

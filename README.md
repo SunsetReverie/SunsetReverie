@@ -7,7 +7,7 @@
 [![PHP](https://img.shields.io/badge/PHP-8.3%2B-777bb4?logo=php&logoColor=white)](https://www.php.net/)
 [![Version](https://img.shields.io/badge/version-1.0.0--beta.2-blue)](CHANGELOG.md)
 [![Runtime deps](https://img.shields.io/badge/runtime%20deps-0-brightgreen)](core/Foundation/autoload.php)
-[![Tests](https://img.shields.io/badge/tests-349%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-354%20passing-brightgreen)](tests/)
 ![PHPStan](https://img.shields.io/badge/PHPStan-level%208-brightgreen)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -121,7 +121,7 @@ curl http://127.0.0.1:8000/health
 | **多 API 域** | 域 → 版本 → 路由三层隔离，token 不跨域 |
 | **组件可替换** | 缓存 4 驱动 · 数据库 3 种 · 图片 2 种 · 邮件 2 种，全部基于接口 |
 | **契约优先** | 39 条错误码，HTTP 状态与业务码一一对应 |
-| **可验证** | 349 用例 · PHPStan level 8 · 架构检查 8 项 · 覆盖率分层达标 |
+| **可验证** | 354 用例 · PHPStan level 8 · 架构检查 8 项 · 覆盖率分层达标 |
 | **真实项目验证** | 63 路由 / 20 表的生产形态项目跑通全部业务闭环 |
 
 ### 已提供的组件
@@ -224,7 +224,7 @@ final class PostService
 
 ```text
 版本     1.0.0-beta.2（功能完整，API 可能微调）
-测试     349 用例 / 916 断言
+测试     354 用例 / 923 断言
 覆盖     core（除 CLI）83.2% · components 75.6%
 静态分析 PHPStan level 8（最高级别）
 架构检查 8 项
@@ -238,13 +238,13 @@ final class PostService
 
 | 项 | 版本 | 验证情况 |
 | --- | --- | --- |
-| PHP | **8.3.36 · 8.4.27 · 8.5.2** | 三版本各跑 349 个用例，全绿 |
+| PHP | **8.3.36 · 8.4.27 · 8.5.2** | 三版本各跑 354 个用例，全绿 |
 | MySQL | 8.x | 方言契约 4/4 |
 | PostgreSQL | 18.6 | 方言契约 4/4 |
 | SQLite | 3.x | 测试默认后端 |
 | 缓存 | file · array · redis · apcu | 各自有单测 |
 
-三个 PHP 版本上**全部 349 个用例都执行**（无跳过）。8.3 / 8.4 上断言数少 47 个，
+三个 PHP 版本上**全部 354 个用例都执行**（无跳过）。8.3 / 8.4 上断言数少 47 个，
 来自可选扩展（imagick / redis / apcu）缺失——每个测试都跑了，只是双驱动对照少一半分支。
 
 ### 实战验证

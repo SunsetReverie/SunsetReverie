@@ -43,6 +43,23 @@ php -v
 
 ## 获取框架
 
+两个仓库，内容完全同步：
+
+| 平台 | 地址 |
+| --- | --- |
+| GitHub | `https://github.com/SunsetReverie/SunsetReverie.git` |
+| Gitee（国内更快） | `https://gitee.com/SunsetReverie/sunset-reverie.git` |
+
+::: tip clone 时指定目录名
+Gitee 的仓库路径是 `sunset-reverie`（全小写带横线），GitHub 是 `SunsetReverie`。
+
+```bash
+git clone <地址> SunsetReverie      # 显式指定目录名，两边结果一致
+```
+
+不指定的话，Gitee 会 clone 出 `sunset-reverie/` 目录。
+:::
+
 三种方式，按场景选。
 
 ### 方式一：用 CLI 生成项目（推荐）
@@ -50,7 +67,7 @@ php -v
 框架自带 `sr new`，会生成一个可直接运行的项目骨架：
 
 ```bash
-git clone <repo> SunsetReverie
+git clone https://github.com/SunsetReverie/SunsetReverie.git SunsetReverie
 cd SunsetReverie
 php bin/sr new myapp
 cd myapp
@@ -64,7 +81,7 @@ cd myapp
 
 ```bash
 cd your-project
-git submodule add <repo> sunsetreverie
+git submodule add https://github.com/SunsetReverie/SunsetReverie.git sunsetreverie
 ```
 
 然后在 `your-project/bin/sr` 放一个转发脚本：
@@ -98,7 +115,7 @@ git -c protocol.file.allow=always submodule update --remote sunsetreverie
 只是想读代码或跑测试：
 
 ```bash
-git clone <repo> SunsetReverie
+git clone https://github.com/SunsetReverie/SunsetReverie.git SunsetReverie
 cd SunsetReverie
 php tests/run.php
 ```

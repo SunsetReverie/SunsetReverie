@@ -223,7 +223,7 @@ final class PostService
 ## 当前状态
 
 ```text
-版本     1.0.0-beta.1（功能完整，API 可能微调）
+版本     1.0.0-beta.2（功能完整，API 可能微调）
 测试     338 用例 / 889 断言
 覆盖     core（除 CLI）82.7% · components 75.6%
 静态分析 PHPStan level 8（最高级别）

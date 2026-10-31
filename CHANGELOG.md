@@ -9,6 +9,66 @@
 
 - 待办见文档 18.3.0「当前验收状态」的缺口列表
 
+## [1.0.0-beta.2] - 2026-10-31
+
+### 新增
+
+- **`directory` 路由模式真正可用**（此前 `routing_mode` 只是个配置项，运行时无人读取）
+
+```text
+routes/
+└── admin/
+    ├── health.php       → /admin/health
+    ├── v1/posts.php     → /admin/v1/posts
+    └── v2/posts.php     → /admin/v2/posts
+```
+
+规则：
+
+- **文件名不进 URL**（`posts.php` 里的 `/list` 就是 `/admin/list`）
+- **版本目录自动加前缀**（`v1/` → `/v1` + `v1.`）
+- **目录最深两层**，更深的目录不扫描
+- **字母序加载**（显式 `sort`，不依赖 `glob` 顺序）
+- 子文件可直接写 `Route::get(...)`，不必 `return` 闭包
+
+### 新增：6 项启动校验
+
+二选一的约束现在**强制执行**，配错立即报错而不是静默失效：
+
+| 场景 | 错误 |
+| --- | --- |
+| `single` 但存在目录 | `routing_mode=single，但存在目录 routes/admin/` |
+| `directory` 但存在单文件 | `routing_mode=directory，但存在单文件 routes/admin.php` |
+| `directory` 但缺目录 | `routing_mode=directory，但缺少目录 routes/admin/` |
+| 版本目录未声明 | `routes/admin/v3/ 不是已声明的版本` |
+| 子文件设 prefix | `directory 模式下不允许在路由文件里设置 prefix` |
+| `routing_mode` 值非法 | `只能是 single 或 directory` |
+
+报错信息都带「改哪里、怎么改」。
+
+### 修复
+
+- **未命名路由的 name 退化成组前缀**
+
+```php
+Route::get('/a', ...);      // 旧：name = 'admin'
+Route::get('/b', ...);      // 旧：name = 'admin'   ← 完全重名
+```
+
+路由名是限流配置（`ratelimit.routes`）和访问日志的 key，重名会命中错误规则。
+现在不传名就是 `null`。
+
+- `Route` 门面 `@method` 注解补上 `any()`
+
+### 说明
+
+`as` 与 `prefix` 的分工在文档里写清了：
+
+- `prefix` 改 URL，`as` 只改路由名
+- 子文件**禁 prefix、允许 as**——混乱来自路径，`as` 不影响 URL
+
+新增 `tests/Integration/DirectoryRoutingTest`（9 个用例）覆盖上述全部行为。
+
 ## [1.0.0-beta.1] - 2026-10-31
 
 ### 发布说明

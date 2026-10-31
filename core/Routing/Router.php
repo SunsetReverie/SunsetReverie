@@ -8,6 +8,7 @@ use SunsetReverie\Api\ApiDomain;
 
 use Closure;
 use SunsetReverie\Routing\Exception\DuplicateRouteException;
+use SunsetReverie\Routing\Exception\RouteRegistrationException;
 use SunsetReverie\Routing\Exception\MethodNotAllowedException;
 use SunsetReverie\Routing\Exception\RouteNotFoundException;
 
@@ -40,6 +41,18 @@ final class Router
 
     /** @var ApiDomain|null 当前正在注册路由的域（用于中间件别名解析） */
     private ?ApiDomain $currentDomain = null;
+
+    /**
+     * 是否禁止在 group() 里设置 prefix。
+     *
+     * directory 模式下由 Application 打开：目录名已经决定了版本前缀，
+     * 文件里再加一次会变成 /admin/v1/v1/posts。
+     *
+     * 用 Router 上的标志而不是「给文件传一个受限注册器」——
+     * 因为文件里可能用 Route 门面（静态）而不是传入的实例，
+     * 只在实例上做限制会被绕过。
+     */
+    private bool $rejectGroupPrefix = false;
 
     /** @var list<array<string, mixed>> 分组属性栈 */
     private array $groupStack = [];
@@ -131,6 +144,19 @@ final class Router
      */
     public function group(array $attributes, Closure $callback): void
     {
+        if ($this->rejectGroupPrefix) {
+            $prefix = trim((string) ($attributes['prefix'] ?? ''), '/');
+
+            if ($prefix !== '') {
+                throw new RouteRegistrationException(sprintf(
+                    'directory 模式下不允许在路由文件里设置 prefix（当前为 [%s]）。'
+                    . '版本前缀由 routes/{域}/{版本}/ 的目录名决定，文件里再加会变成 /域/版本/版本/...；'
+                    . '需要给路由名分类时用 as（as 不影响 URL）。',
+                    $prefix
+                ));
+            }
+        }
+
         $previousDomain = $this->currentDomain;
 
         // 域上下文可以嵌套（域 group → 版本 group → 资源 group），只在最外层设置
@@ -145,6 +171,28 @@ final class Router
         } finally {
             array_pop($this->groupStack);
             $this->currentDomain = $previousDomain;
+        }
+    }
+
+    /**
+     * 在这段代码执行期间禁止 group() 设置 prefix。
+     *
+     * directory 模式加载某个版本目录的文件时用。
+     * 用 try/finally 恢复标志，嵌套调用也能正确还原。
+     *
+     * @param Closure(): void $callback 要执行的加载逻辑
+     * @return void
+     * @throws RouteRegistrationException 回调里给 group 设了 prefix 时抛出
+     */
+    public function withoutGroupPrefix(Closure $callback): void
+    {
+        $previous = $this->rejectGroupPrefix;
+        $this->rejectGroupPrefix = true;
+
+        try {
+            $callback();
+        } finally {
+            $this->rejectGroupPrefix = $previous;
         }
     }
 
@@ -391,7 +439,14 @@ final class Router
         }
 
         if ($name === null) {
-            return $prefix === '' ? null : rtrim($prefix, '.');
+            /*
+             * 不传名就是没名字。
+             *
+             * 旧实现返回 rtrim($prefix, '.')，于是同一分组里
+             * 所有未命名路由的名字都是 'admin' / 'admin.v1'——完全重名。
+             * 而路由名是限流配置和访问日志的 key，重名会命中错误规则。
+             */
+            return null;
         }
 
         return $prefix . $name;

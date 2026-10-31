@@ -7,6 +7,7 @@ namespace SunsetReverie\Foundation;
 use Closure;
 use Throwable;
 use SunsetReverie\Config\Config;
+use SunsetReverie\Routing\Exception\RouteRegistrationException;
 use SunsetReverie\Console\ConsoleKernel;
 use SunsetReverie\Config\Env;
 use SunsetReverie\Config\EnvLoader;
@@ -15,6 +16,7 @@ use SunsetReverie\RateLimit\Middleware\ThrottleRequests;
 use SunsetReverie\Auth\Middleware\Authenticate;
 use SunsetReverie\Auth\Middleware\OptionalAuth;
 use SunsetReverie\Auth\AuthServiceProvider;
+use SunsetReverie\Api\ApiDomain;
 use SunsetReverie\Api\DomainContext;
 use SunsetReverie\Api\DomainRegistry;
 use SunsetReverie\Api\DomainResolver;
@@ -69,7 +71,7 @@ use SunsetReverie\Validation\Validator;
 final class Application
 {
     /** 框架版本 */
-    public const VERSION = '1.0.0-beta.1';
+    public const VERSION = '1.0.0-beta.2';
 
     private static ?self $instance = null;
 
@@ -705,28 +707,241 @@ final class Application
      */
     private function registerDomainRoutes(): void
     {
+        $mode = (string) ($this->config->get('api.routing_mode') ?? 'single');
+
+        if (!in_array($mode, ['single', 'directory'], true)) {
+            throw new RouteRegistrationException(sprintf(
+                'api.routing_mode 只能是 single 或 directory，当前为 [%s]',
+                $mode
+            ));
+        }
+
         foreach ($this->domains->all() as $domain) {
-            $file = $this->basePath('routes/' . $domain->name . '.php');
+            if ($mode === 'single') {
+                $this->registerSingleDomainRoutes($domain);
 
-            if (!is_file($file)) {
                 continue;
             }
 
-            $registrar = require $file;
+            $this->registerDirectoryDomainRoutes($domain);
+        }
+    }
 
-            if (!is_callable($registrar)) {
-                continue;
-            }
+    /**
+     * single 模式：每域一个 routes/{域名}.php。
+     *
+     * 存在同名目录时报错——两种组织方式混用会让「哪个文件生效」变得不可预测，
+     * 而这正是 routing_mode 要避免的。
+     *
+     * @param ApiDomain $domain 域定义
+     * @return void
+     * @throws RouteRegistrationException 存在同名目录时抛出
+     */
+    private function registerSingleDomainRoutes(ApiDomain $domain): void
+    {
+        $file = $this->basePath('routes/' . $domain->name . '.php');
+        $directory = $this->basePath('routes/' . $domain->name);
 
-            $this->router->group([
-                'prefix' => $domain->prefix,
-                'as' => $domain->name . '.',
-                'middleware' => $domain->middleware,
-                // 让路由记住自己属于哪个域，供中间件别名解析使用
-                'domain' => $domain,
-            ], static function (Router $router) use ($registrar): void {
-                $registrar($router);
+        if (is_dir($directory)) {
+            throw new RouteRegistrationException(sprintf(
+                'routing_mode=single，但存在目录 routes/%s/。'
+                . '两种组织方式只能二选一：删掉目录，或把 config/api.php 的 routing_mode 改为 directory。',
+                $domain->name
+            ));
+        }
+
+        if (!is_file($file)) {
+            // 域声明了但还没写路由文件，允许（渐进式开发）
+            return;
+        }
+
+        $registrar = require $file;
+
+        if (!is_callable($registrar)) {
+            throw new RouteRegistrationException(sprintf(
+                '路由文件必须 return 一个闭包：routes/%s.php',
+                $domain->name
+            ));
+        }
+
+        $this->router->group($this->domainGroupAttributes($domain), static function (Router $router) use ($registrar): void {
+            $registrar($router);
+        });
+    }
+
+    /**
+     * directory 模式：routes/{域名}/*.php + routes/{域名}/{版本}/*.php。
+     *
+     * 文件名不进 URL——根目录下的文件直接挂在 /{域前缀} 下，
+     * 版本子目录额外加 /{版本} 前缀。
+     *
+     * @param ApiDomain $domain 域定义
+     * @return void
+     * @throws RouteRegistrationException 结构不合规时抛出
+     */
+    private function registerDirectoryDomainRoutes(ApiDomain $domain): void
+    {
+        $file = $this->basePath('routes/' . $domain->name . '.php');
+        $directory = $this->basePath('routes/' . $domain->name);
+
+        if (is_file($file)) {
+            throw new RouteRegistrationException(sprintf(
+                'routing_mode=directory，但存在单文件 routes/%s.php。'
+                . '两种组织方式只能二选一：删掉文件，或把 config/api.php 的 routing_mode 改为 single。',
+                $domain->name
+            ));
+        }
+
+        if (!is_dir($directory)) {
+            throw new RouteRegistrationException(sprintf(
+                'routing_mode=directory，但缺少目录 routes/%s/。'
+                . '要么创建它并放入路由文件，要么把这个域从 config/api.php 的 domains 里去掉。',
+                $domain->name
+            ));
+        }
+
+        // 版本目录必须已在 domains.{name}.versions 里声明
+        $this->assertVersionDirectoriesDeclared($domain, $directory);
+
+        $this->router->group($this->domainGroupAttributes($domain), function (Router $router) use ($domain, $directory): void {
+            /*
+             * withoutGroupPrefix 只包住「执行子文件」这一步，不包框架自己的 group。
+             *
+             * 否则框架给版本目录加的 group(['prefix' => $version]) 也会被拦下——
+             * 这个 bug 是实测发现的（第一版写反了，directory 模式直接起不来）。
+             *
+             * 用标志位而不是「传受限注册器」：文件里可能用 Route 门面（静态调用），
+             * 只限制实例参数挡不住。
+             */
+
+            // 1) 根目录下的文件：无版本前缀
+            $router->withoutGroupPrefix(function () use ($router, $directory): void {
+                foreach ($this->routeFilesIn($directory) as $file) {
+                    $this->requireRouteFile($router, $file);
+                }
             });
+
+            // 2) 已声明的版本目录：框架加 /{版本} 与 {版本}.，文件里禁止再加
+            foreach ($domain->versions as $version) {
+                $versionDir = $directory . '/' . $version;
+
+                if (!is_dir($versionDir)) {
+                    // 声明了版本但还没建目录，允许（渐进式开发）
+                    continue;
+                }
+
+                $router->group(['prefix' => $version, 'as' => $version . '.'], function (Router $scoped) use ($versionDir): void {
+                    $scoped->withoutGroupPrefix(function () use ($scoped, $versionDir): void {
+                        foreach ($this->routeFilesIn($versionDir) as $file) {
+                            $this->requireRouteFile($scoped, $file);
+                        }
+                    });
+                });
+            }
+        });
+    }
+
+    /**
+     * 域名已被声明的版本目录，反查配置。
+     *
+     * @param ApiDomain $domain 域定义
+     * @param string $directory 域目录
+     * @return void
+     * @throws RouteRegistrationException 存在未声明的版本目录时抛出
+     */
+    private function assertVersionDirectoriesDeclared(ApiDomain $domain, string $directory): void
+    {
+        $entries = scandir($directory);
+
+        if ($entries === false) {
+            return;
+        }
+
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+
+            if (!is_dir($directory . '/' . $entry)) {
+                continue;
+            }
+
+            if (!in_array($entry, $domain->versions, true)) {
+                throw new RouteRegistrationException(sprintf(
+                    'routes/%s/%s/ 不是已声明的版本。'
+                    . '请在 config/api.php 的 domains.%s.versions 里加上 [%s]，或删掉这个目录。'
+                    . '当前已声明：%s',
+                    $domain->name,
+                    $entry,
+                    $domain->name,
+                    $entry,
+                    $domain->versions === [] ? '（空）' : implode(', ', $domain->versions)
+                ));
+            }
+        }
+    }
+
+    /**
+     * 域级 group 的属性。
+     *
+     * @param ApiDomain $domain 域定义
+     * @return array<string, mixed> group 属性
+     */
+    private function domainGroupAttributes(ApiDomain $domain): array
+    {
+        return [
+            'prefix' => $domain->prefix,
+            'as' => $domain->name . '.',
+            'middleware' => $domain->middleware,
+            // 让路由记住自己属于哪个域，供中间件别名解析使用
+            'domain' => $domain,
+        ];
+    }
+
+    /**
+     * 目录下的路由文件（字母序）。
+     *
+     * 显式 sort 而不是依赖 glob 的返回顺序：
+     * 文件加载顺序会影响「静态路由 vs 动态路由」谁先注册，
+     * 字母序至少是可预测的（重命名会改变顺序，文档里说明）。
+     *
+     * @param string $directory 目录
+     * @return list<string> 文件路径
+     */
+    private function routeFilesIn(string $directory): array
+    {
+        $files = glob($directory . '/*.php') ?: [];
+        sort($files, SORT_STRING);
+
+        return $files;
+    }
+
+    /**
+     * 加载一个路由文件。
+     *
+     * @param Router $router 路由器
+     * @param string $file 文件路径
+     * @return void
+     * @throws RouteRegistrationException 文件没返回闭包时抛出
+     */
+    private function requireRouteFile(Router $router, string $file): void
+    {
+        /*
+         * 两种写法都支持：
+         *
+         * 1) 直接写路由（推荐，更简洁）
+         *      Route::get('/posts', [C::class, 'index'], 'posts');
+         *
+         * 2) return 一个闭包（单文件模式必须这样，因为框架要判断内容）
+         *      return function (Router $router): void { ... };
+         *
+         * 目录模式支持第 1 种：require 时文件立即执行，Route 门面已经注册到
+         * 当前 Router 上，不需要再传实例进去。
+         */
+        $registrar = require $file;
+
+        if (is_callable($registrar)) {
+            $registrar($router);
         }
     }
 

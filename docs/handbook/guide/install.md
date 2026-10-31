@@ -351,8 +351,9 @@ myapp/
 │   ├── migrations/
 │   └── seeders/
 ├── routes/
-│   ├── api.php                 单域模式的路由
-│   └── web.php                 多域模式下每域一个文件
+│   ├── api.php                 单域模式的路由（框架只认这一个文件）
+│   └── web.php                 多域模式下每域一个文件（routes/{域名}.php）
+│                               └─ 可以再拆成 routes/web/v1/posts.php（见「路由」）
 ├── storage/
 │   ├── cache/                  文件缓存与配置缓存
 │   ├── compiled/               路由缓存

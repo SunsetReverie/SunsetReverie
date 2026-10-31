@@ -1,4 +1,28 @@
 import { defineConfig } from 'vitepress'
+import { readFileSync } from 'node:fs'
+import { resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const here = dirname(fileURLToPath(import.meta.url))
+
+/**
+ * 从 Application.php 读版本号，避免文档里硬编码导致和代码不一致。
+ *
+ * 之前导航栏写死 v1.0.0-beta.1，而代码已经是 beta.2——这种不同步
+ * 靠人工记得改是治不好的。
+ */
+function frameworkVersion(): string {
+  try {
+    const source = readFileSync(resolve(here, '../../core/Foundation/Application.php'), 'utf-8')
+    const matched = source.match(/public const VERSION = '([^']+)'/)
+
+    return matched ? matched[1] : 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+const VERSION = frameworkVersion()
 
 /**
  * 夕梦框架使用手册
@@ -37,7 +61,7 @@ export default defineConfig({
     nav: [
       { text: '指南', link: '/guide/introduction', activeMatch: '/guide/' },
       { text: '升级', link: '/guide/upgrade', activeMatch: '/guide/upgrade' },
-      { text: 'v1.0.0-beta.1', link: '/' },
+      { text: `v${VERSION}`, link: '/' },
     ],
 
     sidebar: {

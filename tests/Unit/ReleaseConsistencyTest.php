@@ -204,4 +204,76 @@ final class ReleaseConsistencyTest extends TestCase
             )
         );
     }
+
+    /**
+     * 文档里出现的预发布版本号必须等于当前版本。
+     *
+     * 踩过的坑：升级到 beta.2 之后，导航栏、README 徽章、首页标签、
+     * 安装文档的 tag 示例还写着 beta.1——使用者看到会困惑「到底哪个是当前版本」。
+     *
+     * 导航栏已改为从 Application::VERSION 自动读取，这条测试守住其余硬编码处。
+     *
+     * @return void
+     */
+    public function testDocsDoNotReferenceStalePrereleaseVersion(): void
+    {
+        $current = Application::VERSION;
+
+        // 不是预发布版本时没有可比的（比如将来发 1.0.0 正式版）
+        if (!str_contains($current, '-')) {
+            return;
+        }
+
+        $targets = [$this->root . '/README.md', $this->root . '/SECURITY.md'];
+        $handbook = $this->root . '/docs/handbook';
+
+        if (is_dir($handbook)) {
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($handbook, \FilesystemIterator::SKIP_DOTS)
+            );
+
+            foreach ($iterator as $file) {
+                if ($file instanceof \SplFileInfo && $file->getExtension() === 'md') {
+                    $targets[] = $file->getPathname();
+                }
+            }
+        }
+
+        $bad = [];
+
+        foreach ($targets as $path) {
+            if (!is_file($path)) {
+                continue;
+            }
+
+            $content = (string) file_get_contents($path);
+            $rel = str_replace($this->root . '/', '', $path);
+
+            /*
+             * 形如 1.0.0-beta.1 / 2.1.0-rc.3
+             *
+             * 横线允许 1～2 个：shields.io 的徽章会把 `-` 转义成 `--`
+             * （version-1.0.0--beta.1-blue），只写一个会漏掉 README 徽章。
+             */
+            preg_match_all('/\b\d+\.\d+\.\d+-{1,2}[a-z]+\.\d+\b/', $content, $m);
+
+            foreach (array_unique($m[0]) as $found) {
+                // 徽章里的 `--` 还原成 `-` 再比
+                if (str_replace('--', '-', $found) !== $current) {
+                    $bad[] = sprintf('%s 里写着 %s', $rel, $found);
+                }
+            }
+        }
+
+        $this->assertSame(
+            [],
+            $bad,
+            sprintf(
+                "文档里的版本号和当前版本（%s）不一致：\n  %s\n"
+                . "升版本时记得同步这些位置，或者改成引用「当前版本」而不写具体号。",
+                $current,
+                implode("\n  ", $bad)
+            )
+        );
+    }
 }

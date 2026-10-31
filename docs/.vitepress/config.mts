@@ -71,6 +71,20 @@ export default defineConfig({
           ],
         },
         {
+          text: '组件',
+          items: [
+            { text: '缓存', link: '/guide/cache' },
+            { text: '认证', link: '/guide/auth' },
+            { text: '校验', link: '/guide/validation' },
+            { text: '上传', link: '/guide/upload' },
+            { text: '图片', link: '/guide/image' },
+            { text: '邮件', link: '/guide/mail' },
+            { text: '队列', link: '/guide/queue' },
+            { text: '日志', link: '/guide/log' },
+            { text: '限流', link: '/guide/ratelimit' },
+          ],
+        },
+        {
           text: '升级',
           items: [{ text: '从旧版本升级', link: '/guide/upgrade' }],
         },

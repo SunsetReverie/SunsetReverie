@@ -144,9 +144,10 @@ final class SendWelcomeMail implements Job
     {
     }
 
-    public function handle(Container $container): void
+    public function handle(): void
     {
-        $container->get(MailManager::class)->send(new Message(...));
+        // handle() 没有参数，需要 MailManager 时：
+        Application::getInstance()->mail()->send(new Message(...));
     }
 }
 ```

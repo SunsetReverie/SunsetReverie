@@ -187,7 +187,7 @@ final class LogManager
             'stdout' => [new StreamHandler($formatter, $level, $name, 'stdout')],
             'null' => [new NullHandler()],
             default => throw new LogException(sprintf(
-                '不支持的日志驱动 [%s]，可用：single / daily / stderr / stdout / null / stack',
+                '不支持的日志驱动 [%s]，可用：single / daily / stderr / stdout / null',
                 (string) ($config['driver'] ?? '')
             )),
         };

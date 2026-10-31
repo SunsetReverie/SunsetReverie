@@ -62,6 +62,15 @@ export default defineConfig({
           ],
         },
         {
+          text: '数据库',
+          items: [
+            { text: '查询构造器', link: '/guide/database' },
+            { text: '迁移', link: '/guide/migration' },
+            { text: '事务', link: '/guide/transaction' },
+            { text: '多数据库', link: '/guide/multi-database' },
+          ],
+        },
+        {
           text: '升级',
           items: [{ text: '从旧版本升级', link: '/guide/upgrade' }],
         },

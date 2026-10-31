@@ -233,9 +233,19 @@ final class ReleaseConsistencyTest extends TestCase
             );
 
             foreach ($iterator as $file) {
-                if ($file instanceof \SplFileInfo && $file->getExtension() === 'md') {
-                    $targets[] = $file->getPathname();
+                if (!$file instanceof \SplFileInfo || $file->getExtension() !== 'md') {
+                    continue;
                 }
+
+                /*
+                 * 跳过更新记录页：它是 CHANGELOG.md 的镜像，
+                 * 记录历史版本（beta.1、0.45.0……）正是它的本职。
+                 */
+                if ($file->getFilename() === 'changelog.md') {
+                    continue;
+                }
+
+                $targets[] = $file->getPathname();
             }
         }
 

@@ -84,3 +84,6 @@ build/
 /docs/node_modules/
 /docs/.vitepress/cache/
 /docs/.vitepress/dist/
+
+# 文档站里由 CHANGELOG.md 自动生成的页面（真源在仓库根）
+/docs/handbook/changelog.md

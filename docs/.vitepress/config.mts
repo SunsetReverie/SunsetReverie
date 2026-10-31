@@ -1,5 +1,5 @@
 import { defineConfig } from 'vitepress'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -23,6 +23,43 @@ function frameworkVersion(): string {
 }
 
 const VERSION = frameworkVersion()
+
+/**
+ * 把仓库根的 CHANGELOG.md 同步成文档站的一页。
+ *
+ * 为什么在构建时生成而不是手工复制：
+ * 手工复制会有两份内容，升级时必有一份忘改——这和之前版本号不同步
+ * 是同一类问题。同步函数保证只有一份真源。
+ *
+ * 生成文件在 .gitignore 里，不进仓库。
+ */
+function syncChangelog(): void {
+  try {
+    const source = readFileSync(resolve(here, '../../CHANGELOG.md'), 'utf-8')
+
+    // 去掉原文的 `# 更新日志` 标题（下面会重新加）
+    const body = source.replace(/^#\s*更新日志\s*\n+/, '').trimStart()
+
+    const page = [
+      '---',
+      'outline: [2, 3]',
+      '---',
+      '',
+      '# 更新记录',
+      '',
+      '> 本页由仓库根的 `CHANGELOG.md` 自动生成，请勿直接编辑。',
+      '',
+      body,
+      '',
+    ].join('\n')
+
+    writeFileSync(resolve(here, '../handbook/changelog.md'), page, 'utf-8')
+  } catch {
+    // 生成失败不该阻断构建——缺这一页比构建挂掉好
+  }
+}
+
+syncChangelog()
 
 /**
  * 夕梦框架使用手册
@@ -61,7 +98,7 @@ export default defineConfig({
     nav: [
       { text: '指南', link: '/guide/introduction', activeMatch: '/guide/' },
       { text: '升级', link: '/guide/upgrade', activeMatch: '/guide/upgrade' },
-      { text: `v${VERSION}`, link: '/' },
+      { text: `v${VERSION}`, link: '/changelog' },
     ],
 
     sidebar: {
@@ -121,7 +158,10 @@ export default defineConfig({
         },
         {
           text: '升级',
-          items: [{ text: '从旧版本升级', link: '/guide/upgrade' }],
+          items: [
+            { text: '从旧版本升级', link: '/guide/upgrade' },
+            { text: '更新记录', link: '/changelog' },
+          ],
         },
       ],
     },

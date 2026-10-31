@@ -65,6 +65,14 @@ final class ReleaseConsistencyTest extends TestCase
     {
         $changelog = (string) file_get_contents($this->root . '/CHANGELOG.md');
 
+        /*
+         * 只匹配 `x.y.z`，**跳过预发布版本**（如 `1.0.0-beta.1`）。
+         *
+         * 预发布的排序规则和正式版不同（1.0.0-beta.1 < 1.0.0-beta.2 < 1.0.0），
+         * 用 version_compare 比较时还要处理同一个正式版之前的多个 beta ——
+         * 这段逻辑本身容易写错，而它保护的是「补条目时插错位置」这种低级错误，
+         * 不值得为预发布引入更复杂的比较。
+         */
         preg_match_all('/^## \[(\d+\.\d+\.\d+)\]/m', $changelog, $matches);
 
         $versions = $matches[1];

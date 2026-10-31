@@ -71,6 +71,9 @@ build/
 /.github/
 /phpstan.neon
 /scripts/
-/docs/
 /CONTRIBUTING.md
 /CODE_OF_CONDUCT.md
+
+# docs/ 下只有升级指南对外发布，其余（产品规划、交付清单、基准）留本地
+/docs/*
+!/docs/upgrade.md

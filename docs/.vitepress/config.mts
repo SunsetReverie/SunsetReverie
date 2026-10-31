@@ -58,6 +58,7 @@ export default defineConfig({
             { text: '请求与响应', link: '/guide/request-response' },
             { text: '中间件', link: '/guide/middleware' },
             { text: '领域服务', link: '/guide/domain-service' },
+            { text: '代码组织', link: '/guide/structure' },
             { text: '错误处理', link: '/guide/error-handling' },
           ],
         },

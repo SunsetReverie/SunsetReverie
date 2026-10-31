@@ -50,6 +50,27 @@ php bin/sr key:generate
 | `upload.php` | 上传大小、白名单、分片 |
 | `validation.php` | 校验相关（当前只有 1 个键） |
 
+### 数组结构的配置在哪详述
+
+上表里有些文件只是「一行说明」，实际内容是一组嵌套数组。这些在对应组件文档里讲：
+
+| 配置路径 | 详述位置 |
+| --- | --- |
+| `api.domains` | [路由](./routing#定义域) —— 域的 prefix / versions / middleware |
+| `api.middleware_aliases` | [中间件](./middleware#写一个中间件) —— 别名注册 |
+| `app.global_middleware` | [中间件](./middleware#三层绑定) —— 全局中间件顺序 |
+| `auth.guards` | [认证](./auth#配置) —— 守卫与 JWT |
+| `cache.stores` | [缓存](./cache#配置) —— 四个驱动的连接参数 |
+| `cors.*` | 见下方「跨域」一节 |
+| `database.connections` | [多数据库](./multi-database#配置) —— 三库连接 |
+| `log.channels` | [日志](./log#配置) —— 五个通道 |
+| `mail.mailers` | [邮件](./mail#配置) —— log / smtp |
+| `queue.drivers` | [队列](./queue#配置) —— database / sync |
+| `ratelimit.routes` | [限流](./ratelimit#按路由名配置) —— 按路由名覆盖规则 |
+| `upload.disks` / `upload.chunk` | [上传](./upload#配置) —— 存储与分片 |
+
+**这一节不放重复内容**——同一个配置说两遍，改的时候必有一处忘改。
+
 ---
 
 ## 环境变量总表
@@ -196,6 +217,104 @@ php bin/sr key:generate
 高并发建议单独指到 `redis`。
 
 ---
+
+## 跨域（CORS）
+
+```php
+// config/cors.php
+'allowed_origins' => [],          // ← 默认空数组 = 不启用 CORS
+'allowed_methods' => ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+'allowed_headers' => ['Content-Type', 'Authorization', 'X-Request-Id', 'Idempotency-Key'],
+'exposed_headers' => ['X-Request-Id', 'X-RateLimit-Limit', 'X-RateLimit-Remaining', 'Retry-After'],
+'max_age' => 86400,
+'supports_credentials' => false,
+```
+
+### 默认不启用
+
+`allowed_origins` 为空时，`cors` 中间件**不发任何 CORS 头**。
+
+浏览器会拦掉跨域请求——这是安全的默认值：**要用才显式配**。
+
+### 必须列完整域名
+
+```php
+// ✅ 精确列出
+'allowed_origins' => [
+    'https://admin.example.com',
+    'https://app.example.com',
+    'http://localhost:5173',      // 本地开发
+],
+
+// ❌ 不支持通配子域
+'allowed_origins' => ['https://*.example.com'],
+```
+
+匹配逻辑是**精确比对**：
+
+```php
+return in_array('*', $allowedOrigins, true)
+    || in_array($origin, $allowedOrigins, true);
+```
+
+`https://*.example.com` 会被当成一个普通字符串，永远匹配不上。
+
+**子域多的话只能逐个列**（或者自己扩展中间件）。
+
+### `*` 与 `supports_credentials` 互斥
+
+```php
+'allowed_origins' => ['*'],
+'supports_credentials' => true,      // ❌ 浏览器会拒绝
+```
+
+带 `*` 时响应头是 `Access-Control-Allow-Origin: *`，
+而规范禁止 `*` 与 `Allow-Credentials: true` 同时出现。
+
+**本框架用 Bearer Token 不用 Cookie**，所以 `supports_credentials` 保持 `false` 就行。
+
+### `exposed_headers` 决定前端能读到哪些响应头
+
+```js
+// 只有列在 exposed_headers 里的，JS 才读得到
+fetch(url).then(res => {
+    res.headers.get('X-RateLimit-Remaining');   // 默认能读
+    res.headers.get('X-Custom');                // undefined
+});
+```
+
+默认暴露了 4 个：`X-Request-Id`、`X-RateLimit-Limit`、`X-RateLimit-Remaining`、`Retry-After`。
+
+自己加了自定义响应头要在前端读的话，记得加进 `exposed_headers`。
+
+### `max_age` 是预检缓存
+
+```php
+'max_age' => 86400,     // 24 小时
+```
+
+浏览器记住「这个预检通过了」的时长。期间不再发 `OPTIONS` 请求。
+
+值越大，预检越少，但改了 CORS 配置后生效越慢（用户要等缓存过期或清缓存）。
+
+### 预检请求会被短路
+
+```text
+OPTIONS /admin/v1/posts
+  → cors 中间件直接返回 204，不进入路由和鉴权
+```
+
+**这是必要的**：预检请求不带 `Authorization`，走正常流程必然 401。
+
+### 常见错误
+
+| 现象 | 原因 |
+| --- | --- |
+| 浏览器报 `No 'Access-Control-Allow-Origin'` | `allowed_origins` 是空的 |
+| 配了子域通配但不生效 | 不支持通配，要逐个列 |
+| 前端读不到自定义响应头 | 没加进 `exposed_headers` |
+| 带 Cookie 时 CORS 全挂 | `*` 与 `supports_credentials` 冲突 |
+| 改了配置要等很久才生效 | `max_age` 太长，清浏览器缓存或调小 |
 
 ## 生产必改的 6 项
 

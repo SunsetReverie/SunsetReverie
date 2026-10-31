@@ -14,7 +14,7 @@ php -v
 ```
 
 ::: tip 已验证的版本
-8.3.36 / 8.4.27 / 8.5.2 三个版本各跑过完整测试套件（338 用例）。
+8.3.36 / 8.4.27 / 8.5.2 三个版本各跑过完整测试套件（349 用例）。
 
 如果你在 8.3 上遇到问题，很可能是用了 8.4+ 才有的语法——框架本身没有。
 :::
@@ -161,7 +161,7 @@ cp -R "${NEW}core" "${NEW}components" "${NEW}skeleton" sunsetreverie/
 
 # 6. 验证
 php bin/sr about     # 版本号应该变了
-php tests/run.php    # 338 个用例（可选，但建议）
+php tests/run.php    # 349 个用例（可选，但建议）
 ```
 
 ::: warning 不要覆盖 bin/
@@ -319,49 +319,88 @@ curl http://127.0.0.1:8000/health
 
 ## 目录结构
 
+`sr new` 生成两类结构，取决于有没有 `--domains`。
+
+### 单域（`php bin/sr new myapp`）
+
 ```text
 myapp/
+├── .env                      环境变量（已生成随机 APP_KEY）
+├── .env.example
+├── .gitignore
 ├── app/
-│   ├── Api/                    接口层：路由指向的控制器
-│   │   ├── Admin/
-│   │   │   ├── Controller/
-│   │   │   └── Request/        FormRequest 校验类
-│   │   └── Web/
-│   ├── Domain/                 领域层：真正的业务规则
-│   │   └── Post/
-│   │       ├── PostService.php
-│   │       └── Exception/
-│   ├── Http/Middleware/        自定义中间件
-│   ├── Jobs/                   队列任务
-│   └── Provider/               服务提供者（注册依赖）
-├── bin/sr                      命令行入口
-├── config/
-│   ├── api.php                 域与中间件别名
+│   ├── Console/
+│   │   └── Schedule.php      定时任务定义
+│   └── Controller/
+│       └── HomeController.php
+├── bin/sr                    转发到框架的命令行入口
+├── config/                   15 个配置文件
+│   ├── api.php               域、中间件别名
 │   ├── app.php
+│   ├── auth.php
 │   ├── cache.php
+│   ├── cors.php
 │   ├── database.php
-│   ├── http.php                请求体大小限制
+│   ├── http.php              请求体大小上限
 │   ├── image.php
 │   ├── log.php
 │   ├── mail.php
-│   ├── pagination.php          分页上限
+│   ├── pagination.php        分页上限
 │   ├── queue.php
-│   └── ratelimit.php
+│   ├── ratelimit.php
+│   ├── upload.php
+│   └── validation.php
 ├── database/
-│   ├── migrations/
-│   └── seeders/
+│   └── migrations/           迁移文件（预置 create_jobs_table）
+├── public/
+│   └── index.php             唯一入口（Nginx 的 root 指向这里）
 ├── routes/
-│   ├── api.php                 单域模式的路由（框架只认这一个文件）
-│   └── web.php                 多域模式下每域一个文件（routes/{域名}.php）
-│                               └─ 可以再拆成 routes/web/v1/posts.php（见「路由」）
-├── storage/
-│   ├── cache/                  文件缓存与配置缓存
-│   ├── compiled/               路由缓存
-│   ├── logs/
-│   └── uploads/                上传文件
-├── sunsetreverie/              框架（submodule，或在同级的独立目录）
-└── .env
+│   └── api.php               单域模式的路由文件
+└── storage/
+    ├── cache/                文件缓存、配置缓存
+    ├── compiled/             路由缓存
+    ├── logs/
+    └── uploads/
 ```
+
+### 多域（`php bin/sr new myapp --domains=admin,web`）
+
+只变了 `app/` 和 `routes/`：
+
+```text
+myapp/
+├── app/
+│   ├── Api/
+│   │   ├── Admin/
+│   │   │   └── Controller/
+│   │   │       └── HomeController.php
+│   │   └── Web/
+│   │       └── Controller/
+│   │           └── HomeController.php
+│   └── Console/
+│       └── Schedule.php
+├── routes/
+│   ├── admin.php
+│   └── web.php
+└── （其余同单域）
+```
+
+`app/Controller/` 会被删除，`routes/api.php` 也不生成。
+
+::: warning 骨架不预置的目录
+下面这些**都需要你自己建**（框架不要求，按需分层）：
+
+| 目录 | 什么时候建 |
+| --- | --- |
+| `app/Domain/` | 业务规则要多处复用、或需要事务边界时，见[领域服务](./domain-service) |
+| `app/Http/Middleware/` | 写自定义中间件时 |
+| `app/Api/{域}/Request/` | 用 `make:request` 时自动建 |
+| `app/Jobs/` | 写队列任务时 |
+| `app/Provider/` | 需要注册单例依赖时 |
+| `database/seeders/` | 需要种子数据时 |
+
+**骨架只给最小可运行结构**——没有这些目录不是缺陷，是避免一开始就塞一堆空目录。
+:::
 
 ### 三层职责
 

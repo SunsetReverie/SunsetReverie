@@ -25,7 +25,7 @@ hero:
 <div class="sr-feature">
 <span class="sr-icon" style="--icon: url(/icons/feather.svg)"></span>
 <h3>零运行时依赖</h3>
-<p>核心 55 个文件 + 10 个组件，只用 PHP 内置能力。部署不需要 Composer，不需要 vendor 目录。</p>
+<p>核心 56 个文件 + 10 个组件，只用 PHP 内置能力。部署不需要 Composer，不需要 vendor 目录。</p>
 </div>
 
 <div class="sr-feature">
@@ -55,7 +55,7 @@ hero:
 <div class="sr-feature">
 <span class="sr-icon" style="--icon: url(/icons/circle-check.svg)"></span>
 <h3>可验证</h3>
-<p>338 个用例 · PHPStan level 8 · 架构检查 8 项 · 三版本 × 三数据库实测。</p>
+<p>349 个用例 · PHPStan level 8 · 架构检查 8 项 · 三版本 × 三数据库实测。</p>
 </div>
 
 </div>
@@ -128,10 +128,10 @@ final class PostService
 
 | 项 | 结果 |
 | --- | --- |
-| 测试 | 338 用例 / 889 断言 |
+| 测试 | 349 用例 / 916 断言 |
 | 静态分析 | PHPStan **level 8** 零错误 |
 | 架构检查 | 8 项全过 |
-| 覆盖率 | `core`（除 CLI）82.7% · `components` 75.6% |
+| 覆盖率 | `core`（除 CLI）83.2% · `components` 75.6% |
 | PHP 版本 | 8.3.36 · 8.4.27 · 8.5.2 三版本全过 |
 | 数据库 | MySQL 8 · PostgreSQL 18 · SQLite 3 |
 

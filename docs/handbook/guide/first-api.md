@@ -76,7 +76,7 @@ php bin/sr migrate
 
 **先写服务，后写控制器**——因为业务规则不依赖 HTTP。
 
-`app/Domain/Post/PostService.php`：
+`app/Domain/Post/PostService.php`（**这个目录要自己建**，骨架不预置）：
 
 ```php
 <?php
@@ -267,7 +267,7 @@ HTTP 响应
 
 `PostService` 的构造函数要 `Connection`，容器也能解析吗？**不能自动**——因为 `Connection` 需要配置。
 
-所以要在 `app/Provider/AppServiceProvider.php` 里显式注册：
+所以要在 `app/Provider/AppServiceProvider.php` 里显式注册（同样要自己建目录）：
 
 ```php
 $this->container->singleton(PostService::class, static fn (Container $c): PostService

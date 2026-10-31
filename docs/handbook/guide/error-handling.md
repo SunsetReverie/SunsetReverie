@@ -76,7 +76,7 @@ Throwable
 | 20006 | `SignatureExpired` | 401 | 签名过期 |
 | 20007 | `SignatureReplayed` | 401 | 签名重放 |
 | 20008 | `SignatureInvalid` | 401 | 签名无效 |
-| 20009 | `CredentialsInvalid` | 422 | 账号或密码错误 |
+| 20009 | `CredentialsInvalid` | 401 | 账号或密码错误 |
 | 20010 | `TokenDomainMismatch` | 401 | token 不属于当前域 |
 | 20011 | `SignedUrlExpired` | 403 | 签名链接失效 |
 
@@ -86,8 +86,8 @@ Throwable
 | --- | --- | --- | --- |
 | 30001 | `ValidationFailed` | 422 | 参数校验失败 |
 | 30002 | `InvalidJson` | 400 | JSON 格式错误 |
-| 30003 | `MissingParameter` | 422 | 缺少必需参数 |
-| 30004 | `InvalidParameterType` | 422 | 参数类型错误 |
+| 30003 | `MissingParameter` | 400 | 缺少必需参数 |
+| 30004 | `InvalidParameterType` | 400 | 参数类型错误 |
 | 30005 | `UnsupportedMediaType` | 415 | 不支持的媒体类型 |
 | 30006 | `NotAcceptable` | 406 | 无法满足 Accept |
 | 30007 | `MissingIdempotencyKey` | 400 | 缺少幂等键 |
@@ -116,6 +116,19 @@ Throwable
 | 60003 | `CacheError` | 500 | 缓存错误 |
 | 60004 | `StorageError` | 500 | 存储错误 |
 | 60005 | `UpstreamError` | 502 | 上游服务错误 |
+
+有些码是**预留**的，框架不会自己抛出，由业务按需使用：
+
+| 码 | 场景 |
+| --- | --- |
+| `20009` `CredentialsInvalid` | 登录失败（也可以用 422，看你想让前端「跳登录页」还是「标红输入框」） |
+| `30003` `MissingParameter` | 手写参数校验时缺字段 |
+| `30004` `InvalidParameterType` | 手写参数校验时类型不对 |
+
+用 `FormRequest` 时这三类都会被 `ValidationFailed`（30001 / 422）统一处理，
+所以它们只在「手工校验」或「特殊业务语义」时用。
+
+---
 
 ::: tip 为什么没有 5xxxx
 留给**业务自定义**。多域模式下每个域还会有自己的段位（`error_segment`），

@@ -156,7 +156,9 @@ return Response::stream(
         fwrite($out, "\xEF\xBB\xBF");            // UTF-8 BOM，Excel 需要
         fputcsv($out, ['ID', '标题'], ',', '"', '');
 
-        foreach ($repository->cursor() as $row) {   // Generator
+        // 这里的 cursor() 是**你自己写的**：框架没有提供游标查询，
+        // 需要你在仓储里用「主键 > lastId + LIMIT」实现一个 Generator
+        foreach ($repository->cursor() as $row) {
             fputcsv($out, $row, ',', '"', '');
         }
 

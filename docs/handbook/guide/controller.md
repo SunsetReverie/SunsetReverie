@@ -251,7 +251,7 @@ public function __construct(
 `PostService` 的构造函数要 `Connection`（需要数据库配置），所以必须注册：
 
 ```php
-// app/Provider/AppServiceProvider.php
+// app/Provider/AppServiceProvider.php（目录要自己建）
 $this->container->singleton(PostService::class, static fn (Container $c): PostService
     => new PostService($c->get(ConnectionManager::class)->connection()));
 ```

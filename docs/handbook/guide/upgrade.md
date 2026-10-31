@@ -44,7 +44,7 @@ php tests/run.php             # 你自己的测试
 升级后统计查询返回的行里**没有 `id`、`created_at` 等列**：
 
 ```php
-$rows = $db->table('orders')
+$rows = DB::table('orders')
     ->selectRaw('COUNT(*) AS total')
     ->groupBy('status')
     ->get();
@@ -81,7 +81,7 @@ ERROR: column "orders.id" must appear in the GROUP BY clause or be used in an ag
 显式写出来：
 
 ```php
-$db->table('orders')
+DB::table('orders')
     ->select('status', 'order_no')       // 显式列出
     ->selectRaw('COUNT(*) AS total')
     ->groupBy('status');
@@ -93,7 +93,7 @@ $db->table('orders')
 如果非要用：
 
 ```php
-$db->table('orders')
+DB::table('orders')
     ->selectRaw('*', 'COUNT(*) AS total')   // 显式写 * 就不会被清掉
     ->groupBy('status');
 ```
@@ -281,7 +281,7 @@ grep -rn '30001\|40007\|30005\|60001' app/ resources/ 2>/dev/null
 ### 现象
 
 ```php
-$id = $db->table('posts')->insertGetId([...]);
+$id = DB::table('posts')->insertGetId([...]);
 
 var_dump($id === 1);        // 升级前 bool(true)  升级后 bool(true)
 var_dump($id === '1');      // 升级前 bool(true)  升级后 bool(false) ← 变了

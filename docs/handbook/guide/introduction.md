@@ -97,14 +97,14 @@ N+1 问题在开发环境感知不到（本地数据库 1ms），上线后才发
 **这个框架的做法**：
 
 ```php
-$posts = $this->db->table('posts')
+$posts = DB::table('posts')
     ->select('id', 'title', 'author_id')
     ->where('status', 1)
     ->limit(20)
     ->get();
 
 // 作者单独查一次，而不是每行查一次
-$authors = $this->db->table('users')
+$authors = DB::table('users')
     ->whereIn('id', array_column($posts, 'author_id'))
     ->get();
 ```

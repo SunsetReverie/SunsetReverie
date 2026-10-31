@@ -2,12 +2,19 @@
 
 没有 ORM。写什么就是什么 SQL——这是刻意的，见[介绍](./introduction)。
 
+```php
+use SunsetReverie\Support\Facades\DB;
+```
+
+`DB` 是**静态门面**，所有方法转发到默认连接。不需要注入 `Connection`，
+也不需要在 Provider 里注册——直接调就行。
+
 ## 三种取数方式
 
 ### 1. Query Builder（绝大多数场景）
 
 ```php
-$posts = $db->table('posts')
+$posts = DB::table('posts')
     ->select('id', 'title', 'published_at')
     ->where('status', 1)
     ->orderBy('published_at', 'desc')
@@ -18,7 +25,7 @@ $posts = $db->table('posts')
 ### 2. 原生 SQL（复杂查询）
 
 ```php
-$rows = $db->select(
+$rows = DB::select(
     'SELECT p.id, p.title, COUNT(c.id) AS comment_count
        FROM posts p
        LEFT JOIN comments c ON c.post_id = p.id
@@ -34,8 +41,8 @@ Binding 永远是**位置参数**（`?`），不用命名占位符。
 ### 3. 单个标量
 
 ```php
-$count = $db->scalar('SELECT COUNT(*) FROM posts WHERE status = ?', [1]);
-$name = $db->scalar('SELECT name FROM users WHERE id = ?', [$id]);
+$count = DB::scalar('SELECT COUNT(*) FROM posts WHERE status = ?', [1]);
+$name = DB::scalar('SELECT name FROM users WHERE id = ?', [$id]);
 ```
 
 没查到返回 `null`。
@@ -45,9 +52,9 @@ $name = $db->scalar('SELECT name FROM users WHERE id = ?', [$id]);
 ### `where` 只认 9 个运算符
 
 ```php
-$db->table('t')->where('id', 5);                   // 两参：id = 5
-$db->table('t')->where('id', '>', 5);             // 三参：id > 5
-$db->table('t')->where('title', 'LIKE', '%php%');
+DB::table('t')->where('id', 5);                   // 两参：id = 5
+DB::table('t')->where('id', '>', 5);             // 三参：id > 5
+DB::table('t')->where('title', 'LIKE', '%php%');
 ```
 
 可用运算符：`=` `!=` `<>` `<` `>` `<=` `>=` `like` `not like`
@@ -94,7 +101,7 @@ $db->table('t')->where('title', 'LIKE', '%php%');
 ### `when`：条件拼接
 
 ```php
-$db->table('posts')
+DB::table('posts')
     ->when($keyword !== '', fn ($q) => $q->where('title', 'LIKE', "%{$keyword}%"))
     ->when($categoryId > 0, fn ($q) => $q->where('category_id', $categoryId))
     ->get();
@@ -165,12 +172,12 @@ column "t.id" must appear in the GROUP BY clause
 ## 聚合
 
 ```php
-$db->table('posts')->count();                      // int
-$db->table('posts')->sum('view_count');            // int|float
-$db->table('posts')->avg('view_count');            // int|float|null
-$db->table('posts')->max('view_count');            // int|float|null
-$db->table('posts')->min('view_count');            // int|float|null
-$db->table('posts')->exists();                     // bool
+DB::table('posts')->count();                      // int
+DB::table('posts')->sum('view_count');            // int|float
+DB::table('posts')->avg('view_count');            // int|float|null
+DB::table('posts')->max('view_count');            // int|float|null
+DB::table('posts')->min('view_count');            // int|float|null
+DB::table('posts')->exists();                     // bool
 ```
 
 **返回类型是 `int|float`，不是 `string`**。
@@ -192,7 +199,7 @@ $order['total_amount']   // "19.99"（string）
 ### 用 `paginate()`
 
 ```php
-$result = $db->table('posts')
+$result = DB::table('posts')
     ->where('status', 1)
     ->paginate(20, $page);
 
@@ -215,9 +222,9 @@ $result = $db->table('posts')
 ### 手动分页（需要算分排序时）
 
 ```php
-$total = $db->table('posts')->where('status', 1)->count();
+$total = DB::table('posts')->where('status', 1)->count();
 
-$rows = $db->table('posts')
+$rows = DB::table('posts')
     ->where('status', 1)
     ->orderBy('score', 'desc')
     ->limit($perPage)
@@ -259,7 +266,7 @@ $filter = static function ($q) use ($keywords): void {
     }
 };
 
-$db->table('posts')
+DB::table('posts')
     ->where('status', 1)
     ->whereGroup($filter)          // → WHERE status = 1 AND (title LIKE ? OR ...)
 ```
@@ -271,9 +278,9 @@ $db->table('posts')
 ### `insert` / `insertMany` / `insertGetId`
 
 ```php
-$id = $db->table('posts')->insertGetId([...]);      // 返回 int
-$db->table('posts')->insert([...]);                  // 返回 bool
-$db->table('notifications')->insertMany([...]);      // 返回 int（行数）
+$id = DB::table('posts')->insertGetId([...]);      // 返回 int
+DB::table('posts')->insert([...]);                  // 返回 bool
+DB::table('notifications')->insertMany([...]);      // 返回 int（行数）
 ```
 
 **`insertGetId()` 返回 `int`**（v0.15 起的约定），不是字符串。
@@ -291,8 +298,8 @@ $db->table('notifications')->insertMany([...]);      // 返回 int（行数）
 ### `update` / `delete`
 
 ```php
-$affected = $db->table('posts')->where('id', $id)->update(['title' => '新标题']);
-$deleted = $db->table('posts')->where('id', $id)->delete();
+$affected = DB::table('posts')->where('id', $id)->update(['title' => '新标题']);
+$deleted = DB::table('posts')->where('id', $id)->delete();
 ```
 
 **都返回影响行数 `int`**。`0` 说明没匹配到行——不要当成失败，也别当成成功。
@@ -300,8 +307,8 @@ $deleted = $db->table('posts')->where('id', $id)->delete();
 ### 原子自增/自减
 
 ```php
-$db->table('posts')->where('id', $id)->increment('like_count');
-$db->table('posts')->where('id', $id)->decrement('stock', 2);
+DB::table('posts')->where('id', $id)->increment('like_count');
+DB::table('posts')->where('id', $id)->decrement('stock', 2);
 ```
 
 生成的是 `UPDATE ... SET like_count = like_count + 1`——**数据库端计算**，不是「先读再写」。
@@ -309,7 +316,7 @@ $db->table('posts')->where('id', $id)->decrement('stock', 2);
 并发扣库存的标准写法：
 
 ```php
-$affected = $db->table('products')
+$affected = DB::table('products')
     ->where('id', $id)
     ->where('stock', '>=', $qty)
     ->decrement('stock', $qty);
@@ -324,7 +331,7 @@ x-blog 里 10 并发抢最后 1 件，只有 1 个成功——靠的就是这个
 ## 调试
 
 ```php
-$query = $db->table('posts')->where('status', 1)->limit(10);
+$query = DB::table('posts')->where('status', 1)->limit(10);
 
 echo $query->toSql();          // SELECT * FROM posts WHERE status = ?
 print_r($query->getBindings()); // [1]

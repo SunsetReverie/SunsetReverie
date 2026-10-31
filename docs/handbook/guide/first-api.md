@@ -85,15 +85,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Post;
 
-use SunsetReverie\Database\Connection;
+use SunsetReverie\Support\Facades\DB;
 
 final class PostService
 {
     private const STATUS_PUBLISHED = 1;
-
-    public function __construct(private readonly Connection $db)
-    {
-    }
 
     /**
      * 已发布文章的分页列表。
@@ -107,12 +103,12 @@ final class PostService
         $page = max(1, $page);
         $perPage = max(1, min(50, $perPage));
 
-        $query = $this->db->table('posts')->where('status', self::STATUS_PUBLISHED);
+        $query = DB::table('posts')->where('status', self::STATUS_PUBLISHED);
 
         // 先取总数：count() 会重写 SELECT，不影响下面的 get()
         $total = $query->count();
 
-        $items = $this->db->table('posts')
+        $items = DB::table('posts')
             ->select('id', 'title', 'slug', 'published_at')
             ->where('status', self::STATUS_PUBLISHED)
             ->orderBy('published_at', 'desc')
@@ -251,7 +247,7 @@ Router 匹配 /web/v1/posts
   ↓
 中间件管道（全局 → 域 → 路由）
   ↓
-容器解析 PostController（自动注入 PostService，再自动注入 Connection）
+容器解析 PostController（自动注入 PostService）
   ↓
 控制器从 Request 取参数
   ↓
@@ -262,26 +258,39 @@ Router 匹配 /web/v1/posts
 HTTP 响应
 ```
 
-::: tip 依赖注入是自动的
-`PostController` 的构造函数要 `PostService`，容器会自动解析。
+::: tip 大多数服务不用写 Provider
+`PostController` 的构造函数要 `PostService`，容器自动解析。
 
-`PostService` 的构造函数要 `Connection`，容器也能解析吗？**不能自动**——因为 `Connection` 需要配置。
+`PostService` **没有构造函数参数**（用 `DB::` 门面访问数据库），所以容器也能直接 `new` 出来——**不用注册**。
 
-所以要在 `app/Provider/AppServiceProvider.php` 里显式注册（同样要自己建目录）：
+什么时候才需要写 Provider：
 
-```php
-$this->container->singleton(PostService::class, static fn (Container $c): PostService
-    => new PostService($c->get(ConnectionManager::class)->connection()));
-```
-
-**规则**：构造函数参数全是可自动解析的类 → 不用注册；有标量参数或需要配置的 → 必须注册。
+| 情况 | 要注册吗 |
+| --- | --- |
+| 构造函数参数全是可自动解析的类 | ❌ 不用 |
+| 有标量参数（`string $apiKey`） | ✅ 要 |
+| 要绑接口到实现（`CacheStoreInterface` → `RedisStore`） | ✅ 要 |
+| 要控制生命周期（单例 vs 每次新建） | ✅ 要 |
 :::
 
 ## 常见错误
 
 ### 500 错误：`Target [App\Domain\Post\PostService] is not instantiable`
 
-`PostService` 没在 Provider 里注册，或者注册了但构造函数参数无法解析。
+构造函数里有**无法自动解析的参数**（通常是标量，或需要配置的类）。两种解法：
+
+**推荐**：用门面代替注入，让构造函数变空。
+
+```php
+// ❌ 要注入带配置的对象
+public function __construct(private readonly Connection $db) {}
+
+// ✅ 用门面，构造函数可以不写
+public function __construct() {}
+// 或直接删掉构造函数，方法体里用 DB::table()
+```
+
+**或者**在 Provider 里显式注册（见[领域服务](./domain-service#注册)）。
 
 检查 `AppServiceProvider::register()`。
 

@@ -24,7 +24,7 @@
 // 一个只有 CRUD 的接口，写在控制器里没问题
 public function index(Request $request): array
 {
-    return $this->db->table('tags')
+    return DB::table('tags')
         ->orderBy('name')
         ->get();
 }
@@ -49,16 +49,12 @@ declare(strict_types=1);
 namespace App\Domain\Order;
 
 use App\Domain\Order\Exception\OrderException;
-use SunsetReverie\Database\Connection;
+use SunsetReverie\Support\Facades\DB;
 
 final class OrderService
 {
     private const STATUS_PENDING = 0;
     private const STATUS_PAID = 1;
-
-    public function __construct(private readonly Connection $db)
-    {
-    }
 
     /**
      * 创建订单。
@@ -70,7 +66,7 @@ final class OrderService
      */
     public function create(array $items, int $userId): array
     {
-        return $this->db->transaction(function () use ($items, $userId): array {
+        return DB::transaction(function () use ($items, $userId): array {
             $totalCents = 0;
 
             foreach ($items as $item) {
@@ -81,7 +77,7 @@ final class OrderService
                  * 影响行数为 0 就说明库存不够——**不需要「先查再判断」**，
                  * 那个查和改之间的时间窗口正是超卖的来源。
                  */
-                $affected = $this->db->table('products')
+                $affected = DB::table('products')
                     ->where('id', $item['product_id'])
                     ->where('stock', '>=', $item['quantity'])
                     ->decrement('stock', $item['quantity']);
@@ -93,7 +89,7 @@ final class OrderService
                 $totalCents += $this->priceOf($item['product_id']) * $item['quantity'];
             }
 
-            $orderId = $this->db->table('orders')->insertGetId([
+            $orderId = DB::table('orders')->insertGetId([
                 'user_id' => $userId,
                 'total_amount' => $this->formatCents($totalCents),
                 'status' => self::STATUS_PENDING,
@@ -107,13 +103,21 @@ final class OrderService
 
 三个特征：
 
-**1. 构造函数只收基础设施**
+**1. 数据库走门面，不进构造函数**
 
 ```php
+// 方法体里
+DB::table('orders')->insert([...]);
+
+// 而不是
 public function __construct(private readonly Connection $db)
 ```
 
-收 `Connection`、`Cache`、`Queue`——**不收 `Request`**。
+同理，`Cache::` / `Log::` / `Auth::` 都是门面，**不需要注入**。
+
+真正需要注入的是「有状态、带配置的对象」——比如某个第三方 SDK 客户端。
+
+**绝对不要**把 `Request` 注入进来。
 
 **2. 参数是原始类型，不是 HTTP 概念**
 
@@ -139,13 +143,13 @@ return Response::json([...], 422);        // ❌ 领域层不该知道 HTTP
 // ✅ 正确：业务单元自己管事务
 public function create(array $items, int $userId): array
 {
-    return $this->db->transaction(function () use ($items, $userId): array {
+    return DB::transaction(function () use ($items, $userId): array {
         // 扣库存 + 写订单 + 写明细，要么全成要么全败
     });
 }
 
 // ❌ 错误：控制器管事务，服务不知道自己被包在事务里
-$this->db->transaction(function () {
+DB::transaction(function () {
     $this->orders->create($items, $userId);      // 内部没有事务
     $this->notifications->send($userId);         // 这里失败会回滚订单
 });
@@ -156,7 +160,7 @@ $this->db->transaction(function () {
 `transaction()` 支持嵌套，内层用保存点（savepoint）：
 
 ```php
-$this->db->transaction(function (): void {        // 外层
+DB::transaction(function (): void {        // 外层
     $this->orders->create(...);                   // 内层有 transaction()，用保存点
 
     if (random_int(1, 2) === 1) {
@@ -176,8 +180,7 @@ $this->db->transaction(function (): void {        // 外层
 final class OrderService
 {
     public function __construct(
-        private readonly Connection $db,
-        private readonly PostService $posts,      // 别的领域服务
+        private readonly PostService $posts,      // 别的领域服务（可自动解析）
     ) {
     }
 }
@@ -208,15 +211,42 @@ CircularDependencyException: 检测到循环依赖 [A → B → A]
 
 ## 注册
 
-领域服务的构造函数如果有 `Connection` 这类需要配置的参数，**必须在 Provider 里注册**：
+**大多数领域服务不需要注册**——只要构造函数参数都能自动解析，容器就能自己造出来。
+
+用 `DB::` 门面之后，构造函数通常是空的：
+
+```php
+final class OrderService
+{
+    // 没有构造函数，或只收别的领域服务
+    public function create(array $items, int $userId): array
+    {
+        return DB::transaction(function () use ($items, $userId): array {
+            // ...
+        });
+    }
+}
+```
+
+### 什么时候才要写 Provider
 
 ```php
 // app/Provider/AppServiceProvider.php
 $this->container->singleton(OrderService::class, static fn (Container $c): OrderService
-    => new OrderService($c->get(ConnectionManager::class)->connection()));
+    => new OrderService(
+        $c->get(OrderRepository::class),
+        $c->get(Config::class)->get('order.timeout'),   // ← 标量，自动解析不了
+    ));
 ```
 
-不注册的后果：
+| 情况 | 要注册 |
+| --- | --- |
+| 构造函数参数全是可自动解析的类 | ❌ |
+| 有标量参数（`int $timeout`、`string $apiKey`） | ✅ |
+| 要把接口绑到实现 | ✅ |
+| 要控制生命周期 | ✅ |
+
+不注册且解析不了的后果：
 
 ```text
 Target [App\Domain\Order\OrderService] is not instantiable
@@ -229,7 +259,7 @@ $this->container->singleton(A::class, ...);   // 整个请求共用一个实例
 $this->container->bind(A::class, ...);        // 每次解析新建
 ```
 
-**领域服务用 `singleton`**：它们无状态（状态都在数据库），复用没副作用，而且能省下重复建连接的开销。
+**领域服务用 `singleton`**：它们无状态（状态都在数据库），复用没副作用。
 
 ## 一个真实的坑
 

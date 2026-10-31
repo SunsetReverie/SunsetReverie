@@ -3,9 +3,9 @@
 ## 基本用法
 
 ```php
-$result = $db->transaction(function (Connection $db): array {
-    $orderId = $db->table('orders')->insertGetId([...]);
-    $db->table('order_items')->insertMany([...]);
+$result = DB::transaction(function (): array {
+    $orderId = DB::table('orders')->insertGetId([...]);
+    DB::table('order_items')->insertMany([...]);
 
     return ['id' => $orderId];
 });
@@ -13,13 +13,13 @@ $result = $db->transaction(function (Connection $db): array {
 
 三个特性：
 
-1. **回调收到 `Connection`**，不用 `use ($db)` 捕获
+1. **回调不需要参数**——闭包里直接用 `DB::` 门面，指向的就是当前这个连接
 2. **返回值会传出来**（`$result` 是回调的返回值）
 3. **抛异常自动回滚**，并且异常继续往外抛
 
 ```php
-$this->db->transaction(function () use ($userId): void {
-    $this->db->table('posts')->insert([...]);
+DB::transaction(function () use ($userId): void {
+    DB::table('posts')->insert([...]);
 
     throw new \RuntimeException('故意失败');   // → 插入被回滚，异常传给调用方
 });
@@ -27,9 +27,9 @@ $this->db->transaction(function () use ($userId): void {
 
 ::: warning 不要吞掉异常
 ```php
-$this->db->transaction(function (): void {
+DB::transaction(function (): void {
     try {
-        $this->db->table('t')->insert([...]);
+        DB::table('t')->insert([...]);
         $this->doSomethingRisky();
     } catch (\Throwable $e) {
         Log::error('失败', ['e' => $e->getMessage()]);    // ❌ 吞了
@@ -46,19 +46,19 @@ $this->db->transaction(function (): void {
 内层用**保存点**（SAVEPOINT），不是新事务：
 
 ```php
-$db->transaction(function () use ($db): void {          // 第 0 层：BEGIN
-    $db->table('a')->insert([...]);
+DB::transaction(function (): void {          // 第 0 层：BEGIN
+    DB::table('a')->insert([...]);
 
     try {
-        $db->transaction(function () use ($db): void {  // 第 1 层：SAVEPOINT trans0
-            $db->table('b')->insert([...]);
+        DB::transaction(function (): void {  // 第 1 层：SAVEPOINT trans0
+            DB::table('b')->insert([...]);
             throw new \RuntimeException('内层失败');
         });
     } catch (\RuntimeException) {
         // 内层回滚 → b 的插入被撤销，但 a 还在
     }
 
-    $db->table('c')->insert([...]);
+    DB::table('c')->insert([...]);
 });
 // 最终：a 和 c 提交，b 回滚
 ```
@@ -91,14 +91,14 @@ final class OrderService
 {
     public function create(array $items, int $userId): array
     {
-        return $this->db->transaction(function () use ($items, $userId): array {
+        return DB::transaction(function () use ($items, $userId): array {
             // 扣库存 + 写订单 + 写明细
         });
     }
 }
 
 // ❌ 控制器管事务，服务不知道自己被包在事务里
-$db->transaction(function () {
+DB::transaction(function () {
     $this->orders->create($items, $userId);   // 内部没有事务
     $this->notify->send($userId);             // 这里失败会回滚订单
 });
@@ -111,7 +111,7 @@ $db->transaction(function () {
 ### 超卖：条件更新
 
 ```php
-$affected = $db->table('products')
+$affected = DB::table('products')
     ->where('id', $productId)
     ->where('stock', '>=', $quantity)
     ->decrement('stock', $quantity);
@@ -131,9 +131,9 @@ UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?
 
 ```php
 // ❌ 查和改之间有窗口
-$stock = $db->table('products')->where('id', $id)->value('stock');
+$stock = DB::table('products')->where('id', $id)->value('stock');
 if ($stock >= $qty) {
-    $db->table('products')->where('id', $id)->update(['stock' => $stock - $qty]);
+    DB::table('products')->where('id', $id)->update(['stock' => $stock - $qty]);
 }
 ```
 
@@ -149,8 +149,8 @@ xi-blog 实测：10 并发抢最后 1 件，只有 1 个成功，库存归零。
 
 ```php
 // ❌ 读-改-写
-$count = $db->table('posts')->where('id', $id)->value('like_count');
-$db->table('posts')->where('id', $id)->update(['like_count' => $count + 1]);
+$count = DB::table('posts')->where('id', $id)->value('like_count');
+DB::table('posts')->where('id', $id)->update(['like_count' => $count + 1]);
 ```
 
 两个并发各读到 10，都写 11 → 实际应该 12。
@@ -158,7 +158,7 @@ $db->table('posts')->where('id', $id)->update(['like_count' => $count + 1]);
 ### 乐观锁：版本号
 
 ```php
-$affected = $db->table('posts')
+$affected = DB::table('posts')
     ->where('id', $id)
     ->where('version', $expectedVersion)
     ->update([
@@ -183,16 +183,16 @@ if ($affected === 0) {
 | PostgreSQL | **整个事务进入 aborted 状态**，后续所有语句都失败，只能 ROLLBACK |
 
 ```php
-$db->transaction(function () use ($db): void {
-    $db->table('t')->insert(['id' => 1]);
+DB::transaction(function (): void {
+    DB::table('t')->insert(['id' => 1]);
 
     try {
-        $db->table('t')->insert(['id' => 1]);   // 主键冲突
+        DB::table('t')->insert(['id' => 1]);   // 主键冲突
     } catch (QueryException $e) {
         // 两个库都能捕获到
     }
 
-    $db->table('t')->insert(['id' => 2]);       // ← PG 上失败，MySQL 上成功
+    DB::table('t')->insert(['id' => 2]);       // ← PG 上失败，MySQL 上成功
 });
 ```
 
@@ -215,12 +215,12 @@ MySQL
 
 ```php
 try {
-    $db->transaction(fn ($db) => $db->table('t')->insert(['id' => 1]));
+    DB::transaction(fn ($db) => DB::table('t')->insert(['id' => 1]));
 } catch (QueryException) {
     // 保存点已回滚，外层事务仍可继续（PG 上也是）
 }
 
-$db->table('t')->insert(['id' => 2]);   // ✅ 两个库都能执行
+DB::table('t')->insert(['id' => 2]);   // ✅ 两个库都能执行
 ```
 
 ## 隔离级别
@@ -243,13 +243,13 @@ PostgreSQL 的 READ COMMITTED 则会读到其他事务已提交的新值。
 框架不提供设置隔离级别的 API。需要时直接执行 SQL：
 
 ```php
-$db->affect('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+DB::affect('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
 ```
 
 ## 调试
 
 ```php
-$db->transactionLevel();     // 当前嵌套层数，0 表示不在事务里
+DB::transactionLevel();     // 当前嵌套层数，0 表示不在事务里
 ```
 
 排查"为什么没回滚"时，先确认是不是真的在事务里执行。
@@ -277,7 +277,7 @@ $db->transactionLevel();     // 当前嵌套层数，0 表示不在事务里
 事务里做了耗时操作（HTTP 请求、发邮件、图片处理）。这些应该在**事务外**做：
 
 ```php
-$order = $db->transaction(fn ($db) => $this->createOrder($items, $userId));
+$order = DB::transaction(fn ($db) => $this->createOrder($items, $userId));
 
 // 事务已提交，再做慢操作
 $this->mail->send(...);

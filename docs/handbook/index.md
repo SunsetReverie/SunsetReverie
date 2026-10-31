@@ -96,7 +96,7 @@ final class PostService
 
     public function paginate(int $page, int $perPage): array
     {
-        $query = $this->db->table('posts')->where('status', 1);
+        $query = DB::table('posts')->where('status', 1);
 
         return [
             'items' => $query->orderBy('published_at', 'desc')

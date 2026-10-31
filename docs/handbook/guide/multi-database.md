@@ -130,7 +130,7 @@ MySQL
 
 ```php
 try {
-    $db->transaction(fn ($db) => $db->table('t')->insert(['id' => 1]));
+    DB::transaction(fn ($db) => DB::table('t')->insert(['id' => 1]));
 } catch (QueryException) {
     // 保存点已回滚，外层事务仍可继续（PG 上也行）
 }
@@ -141,7 +141,7 @@ try {
 ### 2. `GROUP BY` 的严格程度
 
 ```php
-$db->table('posts')
+DB::table('posts')
     ->selectRaw('status', 'COUNT(*) AS total')
     ->groupBy('status');
 // → SELECT status, COUNT(*) AS total FROM posts GROUP BY status    ✅ 两库都行
@@ -265,7 +265,7 @@ PG 把标识符转小写了。检查建表用的是 `Posts` 还是 `posts`。
 ### DECIMAL 取回来是字符串，比较失败
 
 ```php
-$db->table('orders')->where('total_amount', '19.99')->first();   // PG 上可能不匹配
+DB::table('orders')->where('total_amount', '19.99')->first();   // PG 上可能不匹配
 ```
 
 PG 的 `DECIMAL` 和字符串比较需要显式转型。稳妥做法是用整数「分」存储和比较。

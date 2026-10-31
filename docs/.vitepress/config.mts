@@ -51,6 +51,17 @@ export default defineConfig({
           ],
         },
         {
+          text: '核心概念',
+          items: [
+            { text: '路由', link: '/guide/routing' },
+            { text: '控制器', link: '/guide/controller' },
+            { text: '请求与响应', link: '/guide/request-response' },
+            { text: '中间件', link: '/guide/middleware' },
+            { text: '领域服务', link: '/guide/domain-service' },
+            { text: '错误处理', link: '/guide/error-handling' },
+          ],
+        },
+        {
           text: '升级',
           items: [{ text: '从旧版本升级', link: '/guide/upgrade' }],
         },

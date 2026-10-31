@@ -85,6 +85,16 @@ export default defineConfig({
           ],
         },
         {
+          text: '参考',
+          items: [
+            { text: '命令行', link: '/guide/commands' },
+            { text: '门面', link: '/guide/facades' },
+            { text: '配置', link: '/guide/config' },
+            { text: '错误码', link: '/guide/error-codes' },
+            { text: '部署', link: '/guide/deployment' },
+          ],
+        },
+        {
           text: '升级',
           items: [{ text: '从旧版本升级', link: '/guide/upgrade' }],
         },

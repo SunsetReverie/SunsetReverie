@@ -288,4 +288,4 @@ $this->queue->push(new NotifyJob($order['id']));
 
 - **[多数据库](./multi-database)** —— 三库方言差异全表
 - **[领域服务](./domain-service)** —— 事务边界该画在哪
-- **队列**（组件章节，尚未写完）—— 把慢操作移出请求
+- **[队列](./queue)** —— 把慢操作移出请求

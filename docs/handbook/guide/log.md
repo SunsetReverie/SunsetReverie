@@ -290,4 +290,4 @@ grep -o '"message":"[^"]*"' storage/logs/app-*.log | sort | uniq -c | sort -rn |
 
 - **[错误处理](./error-handling)** —— 异常怎么产生、怎么脱敏
 - **[队列](./queue)** —— 任务失败的日志在哪看
-- **部署**（参考章节，待补）—— 日志轮转与容器采集
+- **[部署](./deployment)** —— 日志轮转与容器采集

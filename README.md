@@ -23,6 +23,10 @@ php bin/sr serve
 
 三行启动，不需要 `composer install`。
 
+> 没有 git？GitHub 的 **Code → Download ZIP** 也能用，
+> 解压后直接 `php bin/sr new demo`——`bin/sr` 不依赖目录名。
+> 详见[安装文档](docs/handbook/guide/install.md#方式四直接下载-zip简单但不适合长期项目)。
+
 ---
 
 ## 目录

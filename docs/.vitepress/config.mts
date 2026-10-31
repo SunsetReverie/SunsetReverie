@@ -20,7 +20,7 @@ export default defineConfig({
 
   head: [
     ['link', { rel: 'icon', href: '/logo.svg' }],
-    ['meta', { name: 'theme-color', content: '#f97316' }],
+    ['meta', { name: 'theme-color', content: '#3e3edc' }],
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:title', content: '夕梦框架' }],
     ['meta', { property: 'og:description', content: '零依赖的 PHP 微服务框架' }],
@@ -29,17 +29,15 @@ export default defineConfig({
   themeConfig: {
     logo: '/logo.svg',
 
+    /*
+     * 导航只列**已写完**的页面。
+     * 未写的先不放，否则点进去是 404——宁可少一项，也不要死链。
+     * 每写完一批，把对应项加回来。
+     */
     nav: [
       { text: '指南', link: '/guide/introduction', activeMatch: '/guide/' },
-      { text: '组件', link: '/components/', activeMatch: '/components/' },
-      { text: '参考', link: '/reference/commands', activeMatch: '/reference/' },
-      {
-        text: 'v1.0.0-beta.1',
-        items: [
-          { text: '更新日志', link: 'https://github.com' },
-          { text: '升级指南', link: '/guide/upgrade' },
-        ],
-      },
+      { text: '升级', link: '/guide/upgrade', activeMatch: '/guide/upgrade' },
+      { text: 'v1.0.0-beta.1', link: '/' },
     ],
 
     sidebar: {

@@ -18,27 +18,47 @@ hero:
     - theme: alt
       text: 升级指南
       link: /guide/upgrade
-
-features:
-  - icon: 🪶
-    title: 零运行时依赖
-    details: 核心 55 个文件 + 10 个组件，只用 PHP 内置能力。部署不需要 Composer，不需要 vendor 目录，不用处理 lock 文件冲突。
-  - icon: 🌗
-    title: 多 API 域
-    details: 域 → 版本 → 路由三层隔离，token 不跨域。PC 站、App、小程序、后台共用一套领域服务，不需要复制四份 controller。
-  - icon: 🧩
-    title: 组件可替换
-    details: 缓存 4 种驱动、数据库 3 种、图片 2 种、邮件 2 种，全部基于接口而非继承。换实现不改调用方。
-  - icon: 🔍
-    title: 看得见 SQL
-    details: 没有 ORM。Query Builder 写出来就是一条可读的 SQL，N+1 问题在写的时候就看得见，而不是等它变成慢查询。
-  - icon: 🛡️
-    title: 契约优先
-    details: 39 条错误码，HTTP 状态与业务码一一对应。异常按语义分类，生产环境自动脱敏。
-  - icon: ✅
-    title: 可验证
-    details: 338 个用例 · PHPStan level 8（最高级）· 架构检查 8 项 · 覆盖率达标。三个 PHP 版本 × 三种数据库实测。
 ---
+
+<div class="sr-features">
+
+<div class="sr-feature">
+<span class="sr-icon" style="--icon: url(/icons/feather.svg)"></span>
+<h3>零运行时依赖</h3>
+<p>核心 55 个文件 + 10 个组件，只用 PHP 内置能力。部署不需要 Composer，不需要 vendor 目录。</p>
+</div>
+
+<div class="sr-feature">
+<span class="sr-icon" style="--icon: url(/icons/topology-star-3.svg)"></span>
+<h3>多 API 域</h3>
+<p>域 → 版本 → 路由三层隔离，token 不跨域。四个端共用一套领域服务，不用复制四份 controller。</p>
+</div>
+
+<div class="sr-feature">
+<span class="sr-icon" style="--icon: url(/icons/puzzle.svg)"></span>
+<h3>组件可替换</h3>
+<p>缓存 4 种驱动、数据库 3 种、图片 2 种、邮件 2 种，全部基于接口而非继承。</p>
+</div>
+
+<div class="sr-feature">
+<span class="sr-icon" style="--icon: url(/icons/search.svg)"></span>
+<h3>看得见 SQL</h3>
+<p>没有 ORM。Query Builder 写出来就是一条可读的 SQL，N+1 在写的时候就看得见。</p>
+</div>
+
+<div class="sr-feature">
+<span class="sr-icon" style="--icon: url(/icons/shield-check.svg)"></span>
+<h3>契约优先</h3>
+<p>39 条错误码，HTTP 状态与业务码一一对应。异常按语义分类，生产环境自动脱敏。</p>
+</div>
+
+<div class="sr-feature">
+<span class="sr-icon" style="--icon: url(/icons/circle-check.svg)"></span>
+<h3>可验证</h3>
+<p>338 个用例 · PHPStan level 8 · 架构检查 8 项 · 三版本 × 三数据库实测。</p>
+</div>
+
+</div>
 
 ## 它长什么样
 
@@ -117,10 +137,21 @@ final class PostService
 
 ## 下一步
 
-<div class="vp-features">
+<div class="sr-links">
 
-- **[安装 →](/guide/install)** —— 三分钟跑起来
-- **[第一个接口 →](/guide/first-api)** —— 从路由到返回 JSON
-- **[它解决什么问题 →](/guide/introduction)** —— 设计取舍与边界
+<a href="/guide/install" class="sr-link">
+<span class="sr-icon" style="--icon: url(/icons/rocket.svg)"></span>
+<span><strong>安装</strong> —— 三分钟跑起来</span>
+</a>
+
+<a href="/guide/first-api" class="sr-link">
+<span class="sr-icon" style="--icon: url(/icons/arrow-right.svg)"></span>
+<span><strong>第一个接口</strong> —— 从路由到返回 JSON</span>
+</a>
+
+<a href="/guide/introduction" class="sr-link">
+<span class="sr-icon" style="--icon: url(/icons/book.svg)"></span>
+<span><strong>它解决什么问题</strong> —— 设计取舍与边界</span>
+</a>
 
 </div>

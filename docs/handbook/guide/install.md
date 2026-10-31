@@ -103,7 +103,86 @@ cd SunsetReverie
 php tests/run.php
 ```
 
-## 三种方式怎么选
+### 方式四：直接下载 ZIP（简单，但不适合长期项目）
+
+不想装 git，或者内网环境配不了凭据？GitHub 的 **Code → Download ZIP** 也能用。
+
+```bash
+# 1. 浏览器下载后解压，得到一个 SunsetReverie-main/ 目录
+unzip SunsetReverie-main.zip
+
+# 2. 建议重命名——去掉 -main 后缀，命令行里看着清楚
+mv SunsetReverie-main sunsetreverie
+
+# 3. 验证完整性（ZIP 偶尔会下不完整）
+cd sunsetreverie
+php bin/sr help        # 能看到 40 条命令 = 完整
+php bin/sr about       # 能看到版本号 = 核心文件齐了
+
+# 4. 之后和 clone 的用法完全一样
+php bin/sr new myapp
+```
+
+::: tip 目录名可以随便改
+`bin/sr` 用 `dirname(__DIR__)` 定位框架根，**不依赖目录名**。叫 `sunsetreverie`、`sr`、`framework` 都能跑。
+
+改名的唯一影响是：`sr new` 生成的 shim 里记的相对路径会跟着变。
+:::
+
+#### ZIP 方式的三个限制
+
+| 限制 | 后果 | 应对 |
+| --- | --- | --- |
+| **没有 `.git` 目录** | 无法 `git pull` 更新，也无法作为 submodule | 长期项目请改用 clone |
+| **更新要重新下载覆盖** | 会**覆盖你对框架代码的任何修改** | 不要改框架代码；非要改，先 fork 或 clone |
+| **没有版本历史** | 出问题查不到是哪次改动引入的 | 记录下载时的版本号（`sr about` 里有） |
+
+#### 怎么更新（ZIP 方式）
+
+```bash
+# 1. 记下当前版本
+php bin/sr about | grep 版本
+
+# 2. 下载新版 ZIP，解压到临时目录
+#    注意：解压出来的目录名取决于下载来源
+#    （GitHub 的 main 分支是 SunsetReverie-main，tag 是小写的 sunsetreverie-1.0.0-beta.1）
+unzip SunsetReverie-*.zip -d /tmp/sr-new
+
+# 3. 用通配符找出实际目录，避免写死名字
+NEW=$(ls -d /tmp/sr-new/*/ | head -1)
+echo "新版在：$NEW"
+
+# 4. 先确认自己没改过框架代码（有差异就先备份）
+diff -rq sunsetreverie/core "${NEW}core"
+
+# 5. 只覆盖三个代码目录
+rm -rf sunsetreverie/core sunsetreverie/components sunsetreverie/skeleton
+cp -R "${NEW}core" "${NEW}components" "${NEW}skeleton" sunsetreverie/
+
+# 6. 验证
+php bin/sr about     # 版本号应该变了
+php tests/run.php    # 338 个用例（可选，但建议）
+```
+
+::: warning 不要覆盖 bin/
+第 4 步只覆盖 `core` / `components` / `skeleton`。
+
+`bin/` 里可能有你的 shim（业务项目转发脚本），覆盖会把自定义的 `SR_BASE_PATH` 冲掉。
+
+同理 `config/`（如果有本地改动）也不要覆盖。
+:::
+
+#### 什么时候 ZIP 就够用
+
+| 场景 | 够用 |
+| --- | --- |
+| 只想跑一次看看效果 | ✅ |
+| 教学、演示、离线环境 | ✅ |
+| 内网服务器，不想配 git 凭据 | ✅ |
+| 需要跟着框架更新 | ❌ 用 clone |
+| 要提 issue 反馈问题 | ❌ 需要能给出 commit 版本 |
+
+## 四种方式怎么选
 
 | 场景 | 用哪个 |
 | --- | --- |
@@ -111,6 +190,12 @@ php tests/run.php
 | 已有项目，增量接入 | 方式二（submodule） |
 | 想读源码 / 参与框架开发 | 方式三（clone） |
 | 多个项目共用一个框架副本 | 方式二（submodule） |
+| 不想装 git / 内网环境 | 方式四（ZIP） |
+| 需要跟版本更新 | 方式一或二（有 `.git`） |
+
+::: tip 一句话选择
+**有 git 就用 git**。ZIP 只解决「没有 git 也能用」，代价是更新麻烦、改不动代码。
+:::
 
 ## 检查环境
 

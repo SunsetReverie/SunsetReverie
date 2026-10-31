@@ -22,10 +22,19 @@
 
   --sr-pink: #ff88a3;
 
-  /* 毛玻璃参数 */
-  --sr-glass-bg: rgba(255, 255, 255, 0.72);
-  --sr-glass-border: rgba(62, 62, 220, 0.12);
-  --sr-glass-blur: 14px;
+  /*
+   * 毛玻璃参数。
+   *
+   * 分工：不透明度决定「透不透」，blur 决定「糊不糊」。
+   *
+   * - 0.62 不透明度：背后内容能透上来一点，但整体还是浅色
+   * - 12px 模糊：糊掉细节但保留色块轮廓——再大就成了一片灰白
+   *
+   * 之前 22px 太强，滚动时像蒙了层雾，文字轮廓全没了。
+   */
+  --sr-glass-bg: rgba(255, 255, 255, 0.62);
+  --sr-glass-border: rgba(62, 62, 220, 0.14);
+  --sr-glass-blur: 12px;
   --sr-glass-shadow: 0 1px 3px rgba(28, 28, 46, 0.06);
 
   /* ── 品牌色映射 ── */
@@ -73,7 +82,7 @@
    ══════════════════════════════════════════════════════════ */
 
 .dark {
-  --sr-glass-bg: rgba(20, 20, 38, 0.72);
+  --sr-glass-bg: rgba(20, 20, 38, 0.62);
   --sr-glass-border: rgba(146, 171, 255, 0.1);
   --sr-glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 
@@ -109,24 +118,80 @@
    导航栏：通栏 + 毛玻璃
    ══════════════════════════════════════════════════════════ */
 
-.VPNav,
-.VPNavBar {
+.VPNav {
   background: transparent !important;
 }
 
 /* 整条导航栏铺满宽度，不做胶囊 */
-.VPNavBar .content-body {
-  background: var(--sr-glass-bg);
-  backdrop-filter: blur(var(--sr-glass-blur)) saturate(150%);
-  -webkit-backdrop-filter: blur(var(--sr-glass-blur)) saturate(150%);
+/*
+ * 毛玻璃和边框都挂在 .VPNavBar 上，不是 .content-body。
+ *
+ * 两个原因：
+ *
+ * 1. .content-body 在 .container 里，container 有 padding: 0 24px，
+ *    边框挂它身上左右各缺 24px，看着像断线。
+ *
+ * 2. .VPNavBar 的高度是 var(--vp-nav-height) = 64px，
+ *    而 .content-body 之前硬编码成 56px——差的 8px 没有毛玻璃，
+ *    滚动时内容会从那条缝里清晰地透出来。
+ *
+ * 挂到全高的父级上，这两个问题一起消失。
+ */
+.VPNavBar,
+.VPNavBar:not(.home),
+.VPNavBar:not(.home):not(.has-sidebar) {
+  /*
+   * 必须 !important。
+   *
+   * VitePress 默认：
+   *   .VPNavBar:not(.home) { background-color: var(--vp-nav-bg-color) }
+   *   而 --vp-nav-bg-color = var(--vp-c-bg)（不透明）
+   *
+   * 它的优先级是 (0,2,0)，比单个 .VPNavBar (0,1,0) 高——
+   * 不加 !important 的话背景被换成不透明色，backdrop-filter 白设。
+   */
+  background: var(--sr-glass-bg) !important;
+  backdrop-filter: blur(var(--sr-glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--sr-glass-blur)) saturate(180%);
   border-bottom: 1px solid var(--sr-glass-border);
+}
+
+/*
+ * .content-body 必须强制透明，否则毛玻璃只在首页有效。
+ *
+ * VitePress 默认：
+ *   .VPNavBar:not(.home.top) .content-body[data-v-xxx] {
+ *     background-color: var(--vp-nav-bg-color);   ← 不透明
+ *   }
+ *
+ * 优先级 (0,4,0)，比 `.VPNavBar .content-body` 的 (0,2,0) 高——
+ * 不加 !important 的话文档页的背景被涂成实色，backdrop-filter 白做。
+ *
+ * 首页有 .home.top，不匹配那条规则，所以首页看起来是正常的。
+ * 这就是「只有首页有毛玻璃」的原因。
+ */
+.VPNavBar .content-body,
+.VPNavBar:not(.home.top) .content-body {
+  background: transparent !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-bottom: none;
   border-radius: 0;
   box-shadow: none;
   max-width: none;
   margin: 0;
   padding: 0;
-  height: 56px;
-  transition: border-color 0.2s;
+  height: 100%;
+}
+
+/*
+ * VitePress 还有一条 1px 的分隔线元素（.divider-line / .divider），
+ * 它和 .VPNavBar 的 border-bottom 叠在一起就是「两条线」。
+ * 边框已经挂在 .VPNavBar 上了，这里全部去掉。
+ */
+.VPNavBar .divider-line,
+.VPNavBar .divider {
+  background-color: transparent !important;
 }
 
 .VPNavBar .container {
@@ -135,19 +200,115 @@
   padding: 0 24px;
 }
 
-/* 滚动时给一条淡阴影 */
-.VPNavBar.has-sidebar .content-body {
-  border-bottom-color: var(--sr-glass-border);
+/*
+ * 去掉 logo 区的下边框。
+ *
+ * VitePress 默认：
+ *   .title { border-bottom: 1px solid transparent }
+ *   .VPNavBarTitle.has-sidebar .title { border-bottom-color: var(--vp-c-divider) }
+ *
+ * 有侧边栏时它变成可见，而 .content-body 已经有一条整宽的边框，
+ * 于是 header 下方出现两条线：短的一条（logo 宽度）+ 长的一条（内容区）。
+ */
+.VPNavBarTitle.has-sidebar .title {
+  border-bottom-color: transparent !important;
 }
 
-/* 侧边栏：不透明，避免和通栏导航叠加出脏色 */
+/*
+ * 侧边栏也用玻璃。
+ *
+ * 之前设为不透明，理由是「避免和通栏导航叠加出脏色」——
+ * 那是纯色背景时的判断。现在背景有柔和光斑，
+ * 半透明反而让光斑从侧边栏透上来，和 header 形成一体。
+ */
 .VPSidebar {
-  background: var(--vp-c-bg) !important;
-  border-right: 1px solid var(--vp-c-divider);
+  background: var(--sr-glass-bg) !important;
+  backdrop-filter: blur(var(--sr-glass-blur));
+  -webkit-backdrop-filter: blur(var(--sr-glass-blur));
+  border-right: 1px solid var(--sr-glass-border);
+
+  /* 隐藏滚动条，但保留滚动能力 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
-.dark .VPSidebar {
-  background: var(--vp-c-bg-alt) !important;
+.VPSidebar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/*
+ * 右侧目录同理。
+ *
+ * 两处都隐藏是为了统一——只隐藏左边会显得不对称。
+ * 滚动能力不受影响：滚轮、触控板、键盘都照常工作。
+ */
+.VPDocAside {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.VPDocAside::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/*
+ * 导航栏布局：logo | 主题切换 GitHub | ……留白…… | 搜索 指南 升级 版本号
+ *
+ * .content-body 里的真实 DOM 顺序是：
+ *   VPNavBarSearch → VPNavBarMenu → VPNavBarAppearance
+ *
+ * 默认主题给 .VPNavBarSearch 设了 flex-grow: 1（吃满剩余空间），
+ * 所以搜索框被撑到最左，菜单跟在它后面 —— 看起来是「搜索在最左、菜单也在左」。
+ *
+ * 想达到「搜索在菜单前面、整组靠右」，只需要：
+ *   - search 不再吃满空间（flex-grow: 0）
+ *   - 用 margin-left: auto 把 search 及它后面的元素一起推到右侧
+ *
+ * 不要用 order！之前试过给 search/menu 设 order:1/2，
+ * 结果 appearance（order 默认 0）被排到最前面，主题切换和 GitHub 跑到了 logo 旁边。
+ */
+@media (min-width: 768px) {
+  .VPNavBarSearch {
+    flex-grow: 0;
+    margin-left: auto;
+    padding-left: 24px;
+    padding-right: 12px;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   页面背景：柔和光斑
+   ══════════════════════════════════════════════════════════ */
+
+/*
+ * 为什么不是「纯色」：
+ *
+ * 纯色背景和毛玻璃是矛盾的——backdrop-filter 模糊的是背后内容，
+ * 背后是纯白时，模糊纯白还是纯白，数学上没有任何变化。
+ *
+ * 这几团光斑的作用不是装饰，是**给模糊提供素材**：
+ * 透明度 4%～7%，近看几乎察觉不到，但玻璃掠过时能看出层次。
+ *
+ * background-attachment: fixed —— 光斑固定在视口，不随滚动移动。
+ * 否则滚动时光斑跟着走，玻璃反而看不出「背后有东西经过」。
+ */
+body {
+  background-color: var(--vp-c-bg);
+  background-image:
+    radial-gradient(900px 620px at 12% -8%, rgba(62, 62, 220, 0.07), transparent 68%),
+    radial-gradient(760px 520px at 88% 12%, rgba(144, 120, 255, 0.06), transparent 70%),
+    radial-gradient(820px 560px at 48% 108%, rgba(146, 171, 255, 0.05), transparent 72%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+
+.dark body {
+  background-image:
+    radial-gradient(900px 620px at 12% -8%, rgba(146, 171, 255, 0.10), transparent 68%),
+    radial-gradient(760px 520px at 88% 12%, rgba(144, 120, 255, 0.09), transparent 70%),
+    radial-gradient(820px 560px at 48% 108%, rgba(62, 62, 220, 0.12), transparent 72%);
 }
 
 /* 搜索按钮 */

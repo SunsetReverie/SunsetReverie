@@ -284,13 +284,20 @@ final class PostService
 
 | 文档 | 回答什么问题 |
 | --- | --- |
-| [升级指南](docs/upgrade.md) | **我该怎么改我的代码**（破坏性变更 + 自检命令） |
+| [使用手册](docs/handbook/index.md) | 安装、第一个接口、设计取舍（VitePress 站点） |
+| [升级指南](docs/handbook/guide/upgrade.md) | **我该怎么改我的代码**（破坏性变更 + 自检命令） |
 | [变更记录](CHANGELOG.md) | 每个版本改了什么、修了哪些 bug |
 | [安全策略](SECURITY.md) | 漏洞往哪报、已有哪些防护、上线检查清单 |
 
 升级前先读升级指南——它管「怎么改」，CHANGELOG 只管「改了什么」。
 
 完整的设计决策与内部规划（产品规划文档、交付清单）由维护者在本地保管，不随仓库分发。
+
+本地预览手册：
+
+```bash
+cd docs && npm install && npm run dev   # http://localhost:5173
+```
 
 ---
 

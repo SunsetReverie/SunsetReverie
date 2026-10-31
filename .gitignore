@@ -74,6 +74,13 @@ build/
 /CONTRIBUTING.md
 /CODE_OF_CONDUCT.md
 
-# docs/ 下只有升级指南对外发布，其余（产品规划、交付清单、基准）留本地
-/docs/*
-!/docs/upgrade.md
+# docs/ 下：handbook/ 是文档站（发布），其余是内部资料（留本地）
+/docs/product-plan/
+/docs/benchmarks/
+/docs/tools/
+/docs/v1.0-checklist.md
+
+# 文档站构建产物与依赖
+/docs/node_modules/
+/docs/.vitepress/cache/
+/docs/.vitepress/dist/

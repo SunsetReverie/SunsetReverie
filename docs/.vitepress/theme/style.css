@@ -1,0 +1,467 @@
+/**
+ * 夕照主题
+ *
+ * v1.0 代号「夕照」——日落时分的第一束稳定光。
+ *
+ * 配色取自晚霞的四个层次：
+ *   暖金 #ffb88c → 夕照橙 #ff7e5f → 绯红 #e85a71 → 紫罗兰 #a06cd5 → 靛蓝 #5f4bb6
+ *
+ * 毛玻璃的用意：像透过暮色中的雾气看东西——
+ * 背景有颜色，但被柔化了；内容浮在上面，清晰但边缘柔和。
+ */
+
+/* ══════════════════════════════════════════════════════════
+   调色板
+   ══════════════════════════════════════════════════════════ */
+
+:root {
+  /* 夕照渐变的五个色阶 */
+  --sr-sun-1: #ffb88c;
+  --sr-sun-2: #ff7e5f;
+  --sr-sun-3: #e85a71;
+  --sr-sun-4: #a06cd5;
+  --sr-sun-5: #5f4bb6;
+
+  /* 主渐变：从左下的暖金升到右上的靛蓝，像太阳落下去 цвет天空变深 */
+  --sr-gradient: linear-gradient(135deg, var(--sr-sun-2) 0%, var(--sr-sun-3) 45%, var(--sr-sun-4) 100%);
+  --sr-gradient-soft: linear-gradient(135deg, var(--sr-sun-1) 0%, var(--sr-sun-2) 60%, var(--sr-sun-4) 100%);
+
+  /* 毛玻璃参数：亮色下白色多一点，暗色下靠低透明度 */
+  --sr-glass-bg: rgba(255, 255, 255, 0.72);
+  --sr-glass-border: rgba(255, 255, 255, 0.55);
+  --sr-glass-blur: 16px;
+  --sr-glass-shadow: 0 8px 32px rgba(232, 90, 113, 0.08);
+
+  /* ── 品牌色 ── */
+  --vp-c-brand-1: #e8503a;
+  --vp-c-brand-2: #f97316;
+  --vp-c-brand-3: #ff9a76;
+  --vp-c-brand-soft: rgba(249, 115, 22, 0.14);
+
+  /* ── 背景：暖白，不是纯白 ── */
+  --vp-c-bg: #fffaf7;
+  --vp-c-bg-alt: #fdf2ec;
+  --vp-c-bg-elv: #ffffff;
+  --vp-c-bg-soft: #fef6f1;
+
+  /* ── 文字：深褐，比纯黑柔和 ── */
+  --vp-c-text-1: #2f2320;
+  --vp-c-text-2: #5c4a44;
+  --vp-c-text-3: #8a746c;
+
+  /* ── 边框 ── */
+  --vp-c-divider: rgba(232, 90, 113, 0.14);
+  --vp-c-border: rgba(232, 90, 113, 0.2);
+  --vp-c-gutter: rgba(232, 90, 113, 0.08);
+
+  /* ── 组件 ── */
+  --vp-nav-bg-color: var(--sr-glass-bg);
+  --vp-sidebar-bg-color: transparent;
+  --vp-code-block-bg: rgba(47, 35, 32, 0.04);
+  --vp-code-bg: rgba(232, 90, 113, 0.08);
+  --vp-code-color: #c2410c;
+
+  /* ── 圆角更柔和 ── */
+  --vp-border-radius: 12px;
+
+  /* ── 按钮渐变 ── */
+  --vp-button-brand-bg: var(--sr-sun-2);
+  --vp-button-brand-hover-bg: var(--sr-sun-3);
+  --vp-button-brand-active-bg: var(--sr-sun-4);
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-hover-border: transparent;
+  --vp-button-brand-active-border: transparent;
+}
+
+/* ══════════════════════════════════════════════════════════
+   暗色：夜幕
+   ══════════════════════════════════════════════════════════ */
+
+.dark {
+  --sr-glass-bg: rgba(30, 22, 42, 0.6);
+  --sr-glass-border: rgba(255, 255, 255, 0.08);
+  --sr-glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.36);
+
+  --vp-c-brand-1: #ff9a76;
+  --vp-c-brand-2: #ff7e5f;
+  --vp-c-brand-3: #ffb88c;
+  --vp-c-brand-soft: rgba(255, 126, 95, 0.16);
+
+  /* 深紫黑，像日落后半小时的天空 */
+  --vp-c-bg: #14101f;
+  --vp-c-bg-alt: #1b1629;
+  --vp-c-bg-elv: #221b33;
+  --vp-c-bg-soft: #1e182c;
+
+  --vp-c-text-1: #f2e9e4;
+  --vp-c-text-2: #b9a8a0;
+  --vp-c-text-3: #857570;
+
+  --vp-c-divider: rgba(255, 154, 118, 0.12);
+  --vp-c-border: rgba(255, 154, 118, 0.18);
+  --vp-c-gutter: rgba(255, 154, 118, 0.06);
+
+  --vp-code-block-bg: rgba(0, 0, 0, 0.32);
+  --vp-code-bg: rgba(255, 154, 118, 0.12);
+  --vp-code-color: #ffb88c;
+}
+
+/* ══════════════════════════════════════════════════════════
+   全局：背景光晕
+   ══════════════════════════════════════════════════════════ */
+
+body {
+  /* 两团径向渐变模拟天边的夕照，固定不随滚动 */
+  background-image:
+    radial-gradient(ellipse 70% 45% at 15% 0%, rgba(255, 126, 95, 0.1), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 85% 5%, rgba(160, 108, 213, 0.09), transparent 60%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.dark body {
+  background-image:
+    radial-gradient(ellipse 70% 45% at 15% 0%, rgba(255, 126, 95, 0.07), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 85% 5%, rgba(95, 75, 182, 0.12), transparent 60%);
+}
+
+/* ══════════════════════════════════════════════════════════
+   毛玻璃：导航栏 / 侧边栏 / 搜索
+   ══════════════════════════════════════════════════════════ */
+
+.VPNav,
+.VPNavBar {
+  background: transparent !important;
+}
+
+.VPNavBar:not(.has-sidebar) {
+  background: transparent !important;
+}
+
+/* 导航栏本体做成玻璃条 */
+.VPNavBar .content-body {
+  background: var(--sr-glass-bg);
+  border: 1px solid var(--sr-glass-border);
+  border-radius: 999px;
+  backdrop-filter: blur(var(--sr-glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--sr-glass-blur)) saturate(180%);
+  box-shadow: var(--sr-glass-shadow);
+  margin: 8px auto 0;
+  padding: 0 8px 0 16px;
+  max-width: 1100px;
+  height: 52px;
+  transition: box-shadow 0.3s, background 0.3s;
+}
+
+.VPNavBar .content-body:hover {
+  box-shadow: 0 10px 40px rgba(232, 90, 113, 0.14);
+}
+
+.VPNavBar .container {
+  max-width: 100%;
+}
+
+/* 侧边栏 */
+.VPSidebar {
+  background: transparent !important;
+}
+
+.VPSidebarItem .item,
+.VPSidebar .curtain {
+  background: transparent;
+}
+
+/* 本地搜索框 */
+.VPNavBarSearch .DocSearch-Button,
+.VPNavBarSearch button {
+  background: rgba(255, 255, 255, 0.5) !important;
+  border: 1px solid var(--sr-glass-border) !important;
+  border-radius: 999px !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.dark .VPNavBarSearch .DocSearch-Button,
+.dark .VPNavBarSearch button {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* 搜索弹窗 */
+.VPLocalSearchBox .shell {
+  background: var(--sr-glass-bg) !important;
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--sr-glass-border);
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(47, 35, 32, 0.18);
+}
+
+/* ══════════════════════════════════════════════════════════
+   首页 Hero
+   ══════════════════════════════════════════════════════════ */
+
+.VPHero .name,
+.VPHero .text {
+  background: var(--sr-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: -0.02em;
+}
+
+.VPHero .text {
+  font-size: clamp(2rem, 5vw, 3.4rem);
+  line-height: 1.15;
+}
+
+.VPHero .tagline {
+  color: var(--vp-c-text-2);
+  font-size: 1.1rem;
+  max-width: 560px;
+  margin: 0 auto;
+  line-height: 1.7;
+}
+
+/* Hero 大按钮 */
+.VPHero .VButton.brand {
+  background: var(--sr-gradient);
+  border: none;
+  border-radius: 999px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(232, 90, 113, 0.28);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.VPHero .VButton.brand:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(232, 90, 113, 0.36);
+}
+
+.VPHero .VButton.alt {
+  border-radius: 999px;
+  background: var(--sr-glass-bg);
+  border: 1px solid var(--sr-glass-border);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* ══════════════════════════════════════════════════════════
+   特性卡片（毛玻璃卡片）
+   ══════════════════════════════════════════════════════════ */
+
+.VPFeature {
+  background: var(--sr-glass-bg) !important;
+  border: 1px solid var(--sr-glass-border) !important;
+  border-radius: 16px !important;
+  backdrop-filter: blur(var(--sr-glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--sr-glass-blur)) saturate(180%);
+  box-shadow: var(--sr-glass-shadow);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s;
+}
+
+.VPFeature:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 48px rgba(232, 90, 113, 0.16);
+}
+
+.VPFeature .icon {
+  background: var(--sr-gradient-soft);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-size: 1.6rem;
+}
+
+.VPFeature .title {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.VPFeature .details {
+  color: var(--vp-c-text-2);
+  line-height: 1.65;
+}
+
+/* ══════════════════════════════════════════════════════════
+   正文
+   ══════════════════════════════════════════════════════════ */
+
+.vp-doc h1 {
+  letter-spacing: -0.03em;
+  font-weight: 700;
+}
+
+.vp-doc h2 {
+  margin-top: 3rem;
+  padding-top: 1.6rem;
+  border-top: 1px solid var(--vp-c-divider);
+  letter-spacing: -0.02em;
+}
+
+.vp-doc h3 {
+  margin-top: 2rem;
+  letter-spacing: -0.01em;
+}
+
+/* 行内代码：暖色调，不用刺眼的红 */
+.vp-doc :not(pre) > code {
+  background: var(--vp-code-bg);
+  color: var(--vp-code-color);
+  border-radius: 6px;
+  padding: 0.15em 0.42em;
+  font-size: 0.88em;
+  font-weight: 500;
+}
+
+/* 代码块：玻璃质感 + 柔和阴影 */
+.vp-doc div[class*='language-'] {
+  border-radius: 14px;
+  border: 1px solid var(--vp-c-divider);
+  box-shadow: 0 4px 20px rgba(47, 35, 32, 0.05);
+  margin: 1.4rem 0;
+}
+
+.dark .vp-doc div[class*='language-'] {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.vp-doc div[class*='language-'] > span.lang {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+/* 表格 */
+.vp-doc table {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--vp-c-divider);
+  font-size: 0.92rem;
+}
+
+.vp-doc tr:nth-child(2n) {
+  background: var(--vp-c-bg-soft);
+}
+
+.vp-doc th {
+  background: var(--vp-c-bg-alt);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* 引用块：左侧渐变条 */
+.vp-doc blockquote {
+  border-left: 3px solid transparent;
+  border-image: var(--sr-gradient) 1;
+  background: var(--vp-c-bg-soft);
+  border-radius: 0 10px 10px 0;
+  padding: 0.9rem 1.2rem;
+  color: var(--vp-c-text-2);
+}
+
+.vp-doc blockquote > p {
+  margin: 0;
+}
+
+/* 提示容器（tip / warning / danger）微调圆角 */
+.vp-doc .custom-block {
+  border-radius: 12px;
+  border-width: 1px;
+}
+
+/* 链接 */
+.vp-doc a {
+  font-weight: 500;
+  text-underline-offset: 3px;
+  transition: color 0.2s;
+}
+
+/* ══════════════════════════════════════════════════════════
+   侧边栏与目录
+   ══════════════════════════════════════════════════════════ */
+
+.VPSidebarItem.level-0 > .item > .text {
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.VPSidebarItem.is-active > .item .link > .text {
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
+}
+
+/* 右侧本页目录 */
+.VPDocAsideOutline .outline-title {
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.VPDocAsideOutline .outline-link.active {
+  color: var(--vp-c-brand-1);
+  font-weight: 500;
+}
+
+/* ══════════════════════════════════════════════════════════
+   滚动条
+   ══════════════════════════════════════════════════════════ */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--sr-sun-2), var(--sr-sun-4));
+  border-radius: 999px;
+  border: 2px solid var(--vp-c-bg);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, var(--sr-sun-3), var(--sr-sun-5));
+}
+
+/* ══════════════════════════════════════════════════════════
+   动效：尊重 reduced-motion
+   ══════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* 响应式：小屏时导航栏不做胶囊形 */
+@media (max-width: 768px) {
+  .VPNavBar .content-body {
+    border-radius: 14px;
+    margin: 6px 12px 0;
+    max-width: none;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   打印：去掉装饰
+   ══════════════════════════════════════════════════════════ */
+
+@media print {
+  body {
+    background: #fff;
+  }
+
+  .VPNav,
+  .VPSidebar,
+  .VPDocAside {
+    display: none;
+  }
+}

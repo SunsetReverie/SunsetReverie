@@ -1,0 +1,14 @@
+{
+  "name": "sunsetreverie-handbook",
+  "private": true,
+  "type": "module",
+  "description": "夕梦框架使用手册（VitePress 站点）",
+  "scripts": {
+    "dev": "vitepress dev --port 5173",
+    "build": "vitepress build",
+    "preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.3"
+  }
+}

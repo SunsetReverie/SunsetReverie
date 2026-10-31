@@ -207,7 +207,7 @@ return Response::stream(static function (): void {
 ```json
 {
   "code": 0,
-  "message": "ok",
+  "message": "success",
   "data": { ... },
   "request_id": "01a18f94-...",
   "timestamp": 1793380598

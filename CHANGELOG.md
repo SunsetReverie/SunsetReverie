@@ -7,6 +7,26 @@
 
 ## [Unreleased]
 
+### 变更
+
+- 成功响应的 `message` 默认值：`ok` → `success`
+
+```json
+{"code":0,"message":"success","data":...,"request_id":"...","timestamp":...}
+```
+
+只改默认值，业务仍可传自定义消息：
+
+```php
+return $this->success($data, '创建成功');
+```
+
+**影响面**：前端如果判断了 `message === 'ok'`，需要改成 `'success'`。
+更稳妥的做法是**只判断 `code === 0`**——业务码是契约，`message` 只是展示文案，
+以后还可能变。
+
+### 待办
+
 - 待办见文档 18.3.0「当前验收状态」的缺口列表
 
 ## [1.0.0-beta.2] - 2026-10-31

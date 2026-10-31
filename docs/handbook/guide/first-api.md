@@ -13,7 +13,7 @@ GET /web/v1/posts?page=1&per_page=10
 ```json
 {
   "code": 0,
-  "message": "ok",
+  "message": "success",
   "data": {
     "items": [
       { "id": 1, "title": "第一篇文章", "published_at": "2026-10-30 12:00:00" }

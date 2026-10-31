@@ -22,7 +22,7 @@ final class Envelope
      * @param string|null $requestId 请求 ID
      * @return array<string, mixed> 包络数组
      */
-    public static function success(mixed $data, string $message = 'ok', ?string $requestId = null): array
+    public static function success(mixed $data, string $message = 'success', ?string $requestId = null): array
     {
         return [
             'code' => 0,

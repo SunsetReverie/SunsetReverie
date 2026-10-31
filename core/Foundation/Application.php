@@ -443,7 +443,7 @@ final class Application
      * @param string $message 提示消息
      * @return Response 响应实例
      */
-    public function success(mixed $data = null, string $message = 'ok'): Response
+    public function success(mixed $data = null, string $message = 'success'): Response
     {
         return Response::json(Envelope::success($data, $message, $this->currentRequestId()));
     }

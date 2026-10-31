@@ -113,7 +113,7 @@ enum ErrorCode: int
     public function message(): string
     {
         return match ($this) {
-            self::Ok => 'ok',
+            self::Ok => 'success',
             self::InternalError => '服务器内部错误',
             self::ServiceUnavailable => '服务暂时不可用',
             self::ConfigError => '配置错误',

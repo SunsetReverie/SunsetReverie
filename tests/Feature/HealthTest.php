@@ -37,7 +37,7 @@ final class HealthTest extends TestCase
 
         $this->assertSame(200, $response->status());
         $this->assertSame(0, $payload['code']);
-        $this->assertSame('ok', $payload['message']);
+        $this->assertSame('success', $payload['message']);
         $this->assertSame('healthy', $payload['data']['status']);
         $this->assertArrayHasKey('request_id', $payload);
         $this->assertArrayHasKey('timestamp', $payload);

@@ -299,7 +299,7 @@ curl http://127.0.0.1:8000/health
 ```json
 {
   "code": 0,
-  "message": "ok",
+  "message": "success",
   "data": { "status": "healthy" },
   "request_id": "01a18f94-...",
   "timestamp": 1793380598
@@ -310,7 +310,7 @@ curl http://127.0.0.1:8000/health
 所有响应都是这个结构：
 
 ```json
-{ "code": 0, "message": "ok", "data": ..., "request_id": "...", "timestamp": ... }
+{ "code": 0, "message": "success", "data": ..., "request_id": "...", "timestamp": ... }
 ```
 
 `code` 是**业务码**（0 表示成功），和 HTTP 状态码分开。

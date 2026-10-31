@@ -9,6 +9,52 @@ use SunsetReverie\Support\Facades\DB;
 `DB` 是**静态门面**，所有方法转发到默认连接。不需要注入 `Connection`，
 也不需要在 Provider 里注册——直接调就行。
 
+### 两种写法都能用
+
+门面是推荐写法，但**构造函数注入 `Connection` 也能正常工作**（容器已绑定它）：
+
+```php
+// ✅ 推荐：门面
+final class PostService
+{
+    public function count(): int
+    {
+        return DB::table('posts')->count();
+    }
+}
+
+// ✅ 也可以用：注入
+final class PostService
+{
+    public function __construct(private readonly Connection $db)
+    {
+    }
+
+    public function count(): int
+    {
+        return $this->db->table('posts')->count();
+    }
+}
+```
+
+**两者指向同一个连接实例**，行为完全一致。
+
+### 什么时候该用注入
+
+| 场景 | 用哪个 |
+| --- | --- |
+| 普通业务查询 | 门面（代码短，少一行构造函数） |
+| **测试时要替换连接** | 注入（能注入 mock 或内存库） |
+| 多库项目，一个服务要操作**非默认库** | 注入（传别的 Connection 实例） |
+| 需要在事务回调里保证用同一个连接 | 两者都行（门面在事务内也指向同一个） |
+
+::: tip 为什么文档统一用门面
+不是「注入不好」，是**一致性**——同一份文档里两种写法混着出现，
+读者会反复确认「这里为什么不一样」。
+
+新代码建议门面；已有代码用注入也不用改，能跑就不用动。
+:::
+
 ## 三种取数方式
 
 ### 1. Query Builder（绝大多数场景）

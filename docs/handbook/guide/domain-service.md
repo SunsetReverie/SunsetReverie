@@ -119,6 +119,11 @@ public function __construct(private readonly Connection $db)
 
 **绝对不要**把 `Request` 注入进来。
 
+::: tip 注入 `Connection` 也能用
+`__construct(private readonly Connection $db)` 依然有效（容器绑定了它），
+适合「测试时要换成内存库」这类场景。两种写法的取舍见[数据库](./database#两种写法都能用)。
+:::
+
 **2. 参数是原始类型，不是 HTTP 概念**
 
 ```php

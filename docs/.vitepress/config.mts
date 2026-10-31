@@ -76,6 +76,16 @@ export default defineConfig({
   titleTemplate: ':title · 夕梦框架',
   description: '零依赖的 PHP 微服务框架 —— 多 API 域隔离、组件可替换、无 ORM',
 
+  /*
+   * GitHub Pages 的项目页部署在 https://<用户>.github.io/<仓库名>/ 下，
+   * 所有资源路径都要带这个前缀，否则 CSS/JS 全 404。
+   *
+   * 但本地 dev 时不能带——否则要访问 localhost:5173/SunsetReverie/ 才行。
+   *
+   * 所以用环境变量控制：CI 里设 DOCS_BASE=/SunsetReverie/，本地不设走 /。
+   */
+  base: process.env.DOCS_BASE || '/',
+
   cleanUrls: true,
   lastUpdated: true,
 

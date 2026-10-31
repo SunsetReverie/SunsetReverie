@@ -1,0 +1,68 @@
+name: Deploy Docs
+
+# 只在文档相关文件变化时触发——改代码不重新部署文档站
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/handbook/**'
+      - 'docs/.vitepress/**'
+      - 'docs/package.json'
+      - 'docs/package-lock.json'
+      - 'CHANGELOG.md'
+      - '.github/workflows/deploy-docs.yml'
+  # 支持在 Actions 页面手动触发（改了配置想立刻重部署时用）
+  workflow_dispatch:
+
+# GitHub Pages 部署需要这三个权限
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只跑一个部署，避免并发发布导致状态错乱
+# 不取消进行中的任务——避免部署到一半被中断留下坏状态
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: 安装依赖
+        working-directory: docs
+        # npm ci 比 npm install 快且可复现——严格按 lock 文件装
+        run: npm ci
+
+      - name: 构建文档站
+        working-directory: docs
+        # DOCS_BASE 决定所有资源路径的前缀。
+        # 项目页部署在 /<仓库名>/ 下，不设这个参数 CSS/JS 会全部 404。
+        env:
+          DOCS_BASE: /SunsetReverie/
+        run: npm run build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/.vitepress/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

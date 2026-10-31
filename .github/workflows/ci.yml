@@ -1,0 +1,136 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支的新提交取消旧任务
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 项目零依赖，不装 composer 包
+  COMPOSER_DISABLE_NETWORK: '1'
+
+jobs:
+  # ── 1. 单元测试矩阵：三个 PHP 版本 ────────────────────────────────
+  test:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4', '8.5']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pdo, pdo_sqlite, mbstring, json, fileinfo, openssl
+          coverage: none
+
+      - name: 跑 CI 检查（跳过静态分析，由 static job 承担）
+        run: SKIP_STATIC=true ./scripts/ci.sh
+        env:
+          CI: 'true'
+
+  # ── 2. 静态分析：只跑一次，避免矩阵里重复下载 30MB phar ──────────
+  static:
+    name: PHPStan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      - name: 缓存 phpstan.phar
+        id: cache-phar
+        uses: actions/cache@v4
+        with:
+          path: phpstan.phar
+          key: phpstan-phar-v1
+
+      - name: 下载 PHPStan
+        if: steps.cache-phar.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL --retry 3 --retry-delay 5 -o phpstan.phar \
+            https://github.com/phpstan/phpstan/releases/latest/download/phpstan.phar
+          chmod +x phpstan.phar
+          php phpstan.phar --version
+
+      - name: 跑 CI 检查（含静态分析）
+        run: ./scripts/ci.sh
+        env:
+          CI: 'true'
+
+  # ── 3. 数据库方言：MySQL + PostgreSQL 真实实例 ───────────────────
+  database:
+    name: 方言（MySQL / PostgreSQL）
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: sr_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sr_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd=pg_isready
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          # 关键：必须装 pdo_mysql / pdo_pgsql，否则方言测试会被静默跳过
+          php-version: '8.4'
+          extensions: pdo, pdo_mysql, pdo_pgsql, pdo_sqlite, mbstring, json, fileinfo, openssl
+          coverage: none
+
+      - name: MySQL 方言
+        run: SKIP_STATIC=true ./scripts/ci.sh
+        env:
+          CI: 'true'
+          SR_TEST_DB: mysql
+          SR_TEST_DB_HOST: 127.0.0.1
+          SR_TEST_DB_PORT: '3306'
+          SR_TEST_DB_NAME: sr_test
+          SR_TEST_DB_USER: root
+          SR_TEST_DB_PASS: root
+
+      - name: PostgreSQL 方言
+        run: SKIP_STATIC=true ./scripts/ci.sh
+        env:
+          CI: 'true'
+          SR_TEST_DB: pgsql
+          SR_TEST_DB_HOST: 127.0.0.1
+          SR_TEST_DB_PORT: '5432'
+          SR_TEST_DB_NAME: sr_test
+          SR_TEST_DB_USER: postgres
+          SR_TEST_DB_PASS: postgres

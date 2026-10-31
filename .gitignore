@@ -68,7 +68,9 @@ build/
 # 将来全面开源时，删掉本节并 `git add -f` 即可。
 # ─────────────────────────────────────────────
 
-/.github/
+# GitHub 配置：只发布 Actions 工作流（部署文档站用），其余本地保留
+/.github/*
+!/.github/workflows/
 /phpstan.neon
 /scripts/
 /CONTRIBUTING.md

@@ -260,12 +260,17 @@ final class ReleaseConsistencyTest extends TestCase
             $rel = str_replace($this->root . '/', '', $path);
 
             /*
-             * 形如 1.0.0-beta.1 / 2.1.0-rc.3
+             * 形如 1.0.0-beta.1 / 2.1.0-rc.3 / 1.0.0-beta.2.1
              *
-             * 横线允许 1～2 个：shields.io 的徽章会把 `-` 转义成 `--`
-             * （version-1.0.0--beta.1-blue），只写一个会漏掉 README 徽章。
+             * 两点：
+             *
+             * 1. 横线允许 1～2 个：shields.io 的徽章会把 `-` 转义成 `--`
+             *    （version-1.0.0--beta.1-blue），只写一个会漏掉 README 徽章。
+             *
+             * 2. 预发布段允许多级：开发期用 1.0.0-beta.2.1 递增，
+             *    只匹配 `[a-z]+.\d+` 会漏掉这种形式。
              */
-            preg_match_all('/\b\d+\.\d+\.\d+-{1,2}[a-z]+\.\d+\b/', $content, $m);
+            preg_match_all('/\b\d+\.\d+\.\d+-{1,2}[a-z]+(?:\.\d+)+\b/', $content, $m);
 
             foreach (array_unique($m[0]) as $found) {
                 // 徽章里的 `--` 还原成 `-` 再比

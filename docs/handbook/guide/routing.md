@@ -243,6 +243,38 @@ Route::get('/posts/{slug}', ...)->where('slug', '[a-z0-9-]+');
 | `hosts` | 否 | `[]` | 按 Host 识别域 |
 | `middleware_aliases` | 否 | `[]` | 域级中间件别名 |
 
+### `prefix` 支持多段
+
+`prefix` 只是个字符串，会原样拼进 URL，所以可以写多段：
+
+```php
+'domains' => [
+    'web' => ['prefix' => 'api/web'],
+    'admin' => ['prefix' => 'api/admin'],
+],
+```
+
+```text
+routes/web.php   里写 Route::get('/posts', ...)  → GET /api/web/posts
+routes/admin.php 里写 Route::get('/users', ...)  → GET /api/admin/users
+```
+
+匹配逻辑是字符串前缀比较（`ApiDomain::matches()`）：
+
+```php
+return $path === '/' . $this->prefix
+    || str_starts_with($path, '/' . $this->prefix . '/');
+```
+
+**典型用法**：前后端同域部署时，API 统一挂 `/api` 前缀，避开前端 SPA 的路由路径。
+
+::: warning 前缀不能互相包含
+`api` 和 `api/admin` 同时存在时，`/api/admin/users` 会先匹配到 `api`——
+识别顺序按配置里的先后，不是按长度。
+
+启动时会检查完全相同的 `prefix` 并报错，但**不检查包含关系**，需要自己避免。
+:::
+
 ::: warning 域级 `as` 不可配
 路由名前缀**永远是域名**：
 

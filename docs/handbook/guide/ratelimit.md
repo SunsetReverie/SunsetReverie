@@ -135,7 +135,7 @@ Route::post('/login', ..., 'auth.login');    // ✅ 有名字
 Route::post('/login', ...);                   // ❌ 名字是 null
 ```
 
-（v1.0.0-beta.2 起，未命名路由的 `name` 是 `null` 而不是退化成组前缀——见[路由](./routing#不传名字会怎样)。）
+（`beta.2` 起，未命名路由的 `name` 是 `null` 而不是退化成组前缀——见[路由](./routing#不传名字会怎样)。）
 :::
 
 ### 规则里也能覆盖 `by`

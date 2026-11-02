@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SunsetReverie\Database\Migration;
 
 use SunsetReverie\Database\Connection;
+use SunsetReverie\Database\Exception\QueryException;
 use SunsetReverie\Database\Migration\Exception\MigrationException;
 use SunsetReverie\Database\Schema\Schema;
 
@@ -196,8 +197,23 @@ final class Migrator
         try {
             $migration->{$direction}(new Schema($this->connection));
         } catch (\Throwable $e) {
+            /*
+             * 两种情况分开给提示。
+             *
+             * QueryException 的 message 里已经带了完整 SQL（见 QueryException::__construct），
+             * 使用者能直接看到是哪条语句挂了，不需要额外指引。
+             *
+             * 其余错误（参数个数不对、调用不存在的方法、类型错误……）发生在 PHP 层，
+             * 报错信息只有一句话，不知道是哪张表、哪一列。这时给一条定位路径：
+             * 用 Blueprint::toSql() 把生成的语句打出来。
+             */
+            $hint = $e instanceof QueryException
+                ? ''
+                : "\n定位方式：在迁移里用 Blueprint::toSql(\$driver) 打印生成的语句，"
+                    . '或把该迁移拆成多次单表操作以缩小范围。';
+
             throw new MigrationException(
-                sprintf('迁移 %s 执行 %s 失败：%s', $file, $direction, $e->getMessage()),
+                sprintf('迁移 %s 执行 %s 失败：%s%s', $file, $direction, $e->getMessage(), $hint),
                 0,
                 $e
             );

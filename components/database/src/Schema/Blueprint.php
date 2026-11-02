@@ -293,13 +293,34 @@ final class Blueprint
     /**
      * 添加普通索引。
      *
-     * @param list<string>|string $columns 列（或多列）
+     * 两种用法（与 unique() 对齐）：
+     *
+     *   // 1) 链式：修饰最近定义的那一列
+     *   $table->string('domain', 120)->index();
+     *
+     *   // 2) 按列名：可指定任意列或复合列
+     *   $table->index('domain');
+     *   $table->index(['post_id', 'created_at']);
+     *
+     * 早期版本只支持第二种，而 unique() 两种都支持——两个兄弟方法不对称，
+     * 使用者会自然假设 `->index()` 也能链式，第一次写迁移必踩一次。
+     *
+     * @param string|list<string>|null $columns 列名（null 表示修饰最后一列）
      * @param string|null $name 索引名
      * @return self 当前实例
      */
-    public function index(array|string $columns, ?string $name = null): self
+    public function index(string|array|null $columns = null, ?string $name = null): self
     {
+        if ($columns === null) {
+            return $this->modifyLast('__INDEX__');
+        }
+
         $columns = array_values((array) $columns);
+
+        foreach ($columns as $column) {
+            $this->assertColumnExists((string) $column);
+        }
+
         $this->indexes[] = [
             'name' => $name ?? $this->table . '_' . implode('_', $columns) . '_index',
             'columns' => $columns,
@@ -319,6 +340,7 @@ final class Blueprint
     {
         $definitions = [];
         $uniqueColumns = [];
+        $chainIndexColumns = [];
 
         foreach ($this->columns as $column) {
             if (str_starts_with($column, '__ID__:')) {
@@ -329,8 +351,10 @@ final class Blueprint
             }
 
             $isUnique = str_ends_with($column, '__UNIQUE__');
+            $isIndex = str_ends_with($column, '__INDEX__');
             $isNullable = str_contains($column, ' NULL');
-            $column = str_replace('__UNIQUE__', '', $column);
+
+            $column = str_replace(['__UNIQUE__', '__INDEX__'], '', $column);
 
             $column = match ($driver) {
                 'pgsql' => str_replace(
@@ -354,22 +378,36 @@ final class Blueprint
                 $column .= ' NOT NULL';
             }
 
-            $definitions[] = $column;
+            /*
+             * 列名要加引号；这里拆出「列名」和「其余部分（类型 + 约束）」。
+             *
+             * 用 explode 而不是 strtok：strtok 返回 string|false，
+             * 静态分析要额外的分支判断，而且它对空字符串的行为不直观。
+             */
+            $parts = explode(' ', trim($column), 2);
+            $columnName = $parts[0];
+            $rest = isset($parts[1]) ? ' ' . $parts[1] : '';
+
+            $definitions[] = $this->quoteIdentifier($columnName, $driver) . $rest;
 
             if ($isUnique) {
-                $uniqueColumns[] = strtok(trim($column), ' ');
+                $uniqueColumns[] = $columnName;
+            }
+
+            if ($isIndex) {
+                $chainIndexColumns[] = $columnName;
             }
         }
 
         foreach ($uniqueColumns as $columnName) {
-            $definitions[] = sprintf('UNIQUE (%s)', $columnName);
+            $definitions[] = sprintf('UNIQUE (%s)', $this->quoteIdentifier($columnName, $driver));
         }
 
         $definitions = [...$definitions, ...$this->constraints];
 
         $sql = sprintf(
             'CREATE TABLE %s (%s)',
-            $this->table,
+            $this->quoteIdentifier($this->table, $driver),
             implode(', ', $definitions)
         );
 
@@ -379,17 +417,52 @@ final class Blueprint
 
         $statements = [$sql];
 
+        // 链式 index() 收集到的列 —— 单独建索引（三库通用）
+        foreach ($chainIndexColumns as $columnName) {
+            $statements[] = sprintf(
+                'CREATE INDEX %s ON %s (%s)',
+                $this->quoteIdentifier($this->table . '_' . $columnName . '_index', $driver),
+                $this->quoteIdentifier($this->table, $driver),
+                $this->quoteIdentifier($columnName, $driver)
+            );
+        }
+
         foreach ($this->indexes as $index) {
+            $quotedColumns = array_map(
+                fn (string $c): string => $this->quoteIdentifier($c, $driver),
+                $index['columns']
+            );
+
             $statements[] = sprintf(
                 'CREATE %sINDEX %s ON %s (%s)',
                 $index['unique'] ? 'UNIQUE ' : '',
-                $index['name'],
-                $this->table,
-                implode(', ', $index['columns'])
+                $this->quoteIdentifier($index['name'], $driver),
+                $this->quoteIdentifier($this->table, $driver),
+                implode(', ', $quotedColumns)
             );
         }
 
         return $statements;
+    }
+
+    /**
+     * 按驱动引用标识符（表名 / 列名 / 索引名）。
+     *
+     * MySQL 用反引号，PostgreSQL 与 SQLite 用双引号。
+     * 不加引号时，列名一旦是 SQL 保留字（key / group / before / order…），
+     * DDL 直接语法错误，而报错只有数据库的通用语法提示，定位成本很高。
+     *
+     * 标识符内部若已含引号，按 SQL 标准双写转义。
+     *
+     * @param string $name 标识符
+     * @param string $driver 驱动
+     * @return string 引用后的标识符
+     */
+    private function quoteIdentifier(string $name, string $driver): string
+    {
+        $quote = $driver === 'mysql' ? '`' : '"';
+
+        return $quote . str_replace($quote, $quote . $quote, $name) . $quote;
     }
 
     /**
@@ -401,10 +474,12 @@ final class Blueprint
      */
     private function idDefinition(string $driver, string $name): string
     {
+        $quoted = $this->quoteIdentifier($name, $driver);
+
         return match ($driver) {
-            'pgsql' => sprintf('%s BIGSERIAL PRIMARY KEY', $name),
-            'sqlite' => sprintf('%s INTEGER PRIMARY KEY AUTOINCREMENT', $name),
-            default => sprintf('%s BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY', $name),
+            'pgsql' => sprintf('%s BIGSERIAL PRIMARY KEY', $quoted),
+            'sqlite' => sprintf('%s INTEGER PRIMARY KEY AUTOINCREMENT', $quoted),
+            default => sprintf('%s BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY', $quoted),
         };
     }
 

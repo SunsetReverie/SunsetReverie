@@ -43,6 +43,72 @@ return new class extends Migration {
 （早期版本这里会报「未找到数据库连接配置」，v0.42 修了。）
 :::
 
+## 标识符加引号
+
+表名、列名、索引名在生成 SQL 时**自动按驱动加引号**：
+
+| 驱动 | 引号 |
+| --- | --- |
+| MySQL | 反引号 |
+| PostgreSQL / SQLite | 双引号（SQL 标准） |
+
+```php
+$schema->create('settings', static function (Blueprint $table): void {
+    $table->id();
+    $table->string('key', 64)->unique();
+    $table->string('group', 32)->index();
+    $table->integer('order')->default(0);
+});
+```
+
+生成：
+
+```sql
+-- mysql
+CREATE TABLE `settings` (`id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `key` VARCHAR(64) NOT NULL, `group` VARCHAR(32) NOT NULL,
+  `order` INT NOT NULL DEFAULT 0, UNIQUE (`key`))
+CREATE INDEX `settings_group_index` ON `settings` (`group`)
+
+-- pgsql
+CREATE TABLE "settings" ("id" BIGSERIAL PRIMARY KEY,
+  "key" VARCHAR(64) NOT NULL, "group" VARCHAR(32) NOT NULL,
+  "order" INTEGER NOT NULL DEFAULT 0, UNIQUE ("key"))
+```
+
+所以**列名可以是 SQL 保留字**（`key` / `group` / `order` / `before` …），不需要改名。
+
+DML 侧同样加了引号：
+
+```php
+DB::table('settings')->where('key', 'site_name')->first();
+// → SELECT * FROM "settings" WHERE "key" = ?
+```
+
+::: tip 只修 DDL 不修 DML 更危险
+`beta.2` 及之前两侧都不加引号，列名用保留字会**建表就失败**——立刻发现。
+
+如果只修 DDL，就变成**建表成功、插入才失败**：
+
+```text
+near "group": syntax error   ← 报错发生在 INSERT，很容易误判成 SQL 写错了
+```
+
+所以两侧必须一起处理。`beta.2.1` 起都已加引号。
+:::
+
+::: warning `selectRaw()` 里的标识符要自己加
+```php
+// ❌ selectRaw 是原始表达式，框架不解析里面的内容
+->selectRaw('group, COUNT(*) as c')
+
+// ✅ 自己按驱动加引号；或者用 select() + groupBy()
+->selectRaw('"group", COUNT(*) as c')->groupBy('group')
+```
+
+`selectRaw()` / `whereRaw()` 这类方法接收的是**原样拼进 SQL 的表达式**，框架不做任何改写。
+:::
+
 ## 列类型
 
 17 个方法：
@@ -132,15 +198,36 @@ $table->unique('sku');     // 参数被忽略！唯一索引加到了 updated_at
 ```
 :::
 
-### `index()` 和 `uniqueIndex()`
+### `index()` 和 `unique()`
 
 ```php
-$table->index('category_id');              // 普通索引
+$table->index('category_id');              // 按列名
 $table->index(['status', 'published_at']); // 复合索引
-$table->uniqueIndex(['post_id', 'version']);  // 同 unique(列名)，但参数必填
+$table->string('domain', 120)->index();    // 链式：修饰最近那一列
 ```
 
-`uniqueIndex()` 和 `unique(列名)` 效果一样，区别是**前者不接受无参调用**——想用链式就写 `unique()`。
+`index()` 和 `unique()` **现在完全对称**，两种写法都支持。
+
+::: warning 曾经不对称（`beta.2.1` 修正）
+`index()` 早期的签名是 `index(array|string $columns)`——**不接受 null**，而兄弟方法
+`unique()` 两种用法都有。使用者会自然假设两者一致：
+
+```php
+$table->string('domain', 120)->index();
+// Too few arguments to function Blueprint::index(), 0 passed and at least 1 expected
+```
+
+报错虽然明确，但第一次写迁移必踩一次。现已对齐。
+:::
+
+`uniqueIndex()` 是另一回事——它**只接受列名**：
+
+```php
+$table->uniqueIndex(['post_id', 'version']);   // ✅
+$table->uniqueIndex();                         // ❌ 参数必填
+```
+
+名字里带 `Index`，语义就是「按列建一个索引」，不修饰最近列。想链式就用 `unique()`。
 
 ### 索引命名
 
@@ -175,6 +262,83 @@ public function down(Schema $schema): void
 `dropIfExists()` 而不是 `drop()`——回滚时表不存在不应该报错（可能被手工删了）。
 
 **回滚顺序是反的**：最后执行的迁移最先回滚。
+
+## 迁移失败后的行为
+
+**不要假设「失败 = 数据库回到干净状态」。**
+
+### 三条明确的行为
+
+| 项 | 实际 |
+| --- | --- |
+| 事务 | **不包**。MySQL 的 DDL 会隐式提交，事务对建表无效 |
+| 失败处理 | **立即停止**，后面的迁移不再执行 |
+| 已成功的迁移 | **记录保留**在 `migrations` 表里，不会自动回滚 |
+
+所以一次失败的 `migrate` 可能留下：
+
+```text
+第 1 个迁移  ✅ 已执行，记录在表里
+第 2 个迁移  ❌ 执行到一半失败
+第 3 个迁移  ⏸ 没开始
+```
+
+### 恢复姿势
+
+```bash
+# 1. 看清楚停在哪
+php bin/sr migrate:status
+
+# 2. 修掉第 2 个迁移里的问题
+
+# 3. 重跑——只会执行剩下的（第 1 个不会重复跑）
+php bin/sr migrate
+```
+
+**如果第 2 个迁移已经建了部分表**（比如一个文件里建三张表，第二张失败），
+需要手工删掉已建的那张，或者干脆：
+
+```bash
+php bin/sr migrate:fresh --force     # ⚠️ 删全部表重建，只在开发/测试库用
+```
+
+### 定位是哪条语句失败
+
+| 错误类型 | 报错里有什么 |
+| --- | --- |
+| SQL 层（语法错误、字段冲突） | **完整的 SQL 语句**（`QueryException` 自带） |
+| PHP 层（参数不对、方法不存在） | 只有错误信息 + 一条定位提示 |
+
+SQL 层的例子：
+
+```text
+迁移 2026_11_02_000002_create_sites_table.php 执行 up 失败：
+SQL 执行失败：SQLSTATE[42000]: Syntax error ...（CREATE TABLE `settings` (`key` VARCHAR(64))）
+                                                                            ↑ 就是这句
+```
+
+PHP 层没有 SQL 可打印（还没走到执行那一步），所以给了提示：
+
+```text
+定位方式：在迁移里用 Blueprint::toSql($driver) 打印生成的语句，或把该迁移拆成多次单表操作以缩小范围。
+```
+
+手动打印：
+
+```php
+public function up(Schema $schema): void
+{
+    $blueprint = new Blueprint('settings');
+    $blueprint->string('key', 64);
+
+    var_dump($blueprint->toSql('mysql'));   // ← 临时加，看完删掉
+}
+```
+
+::: tip 一个迁移只管一张表
+这是最简单也最有效的定位手段——失败时能直接看出是哪张表。
+一个文件建五张表看起来省事，出错时得挨个试。
+:::
 
 ## 一个完整的例子
 

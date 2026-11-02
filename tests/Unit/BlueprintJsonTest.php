@@ -32,7 +32,10 @@ final class BlueprintJsonTest extends TestCase
         foreach ($expected as $driver => $type) {
             $sql = implode("\n", $blueprint->toSql($driver));
 
-            $this->assertStringContains("payload {$type}", $sql, "[{$driver}] 应为 {$type}");
+            // 标识符按驱动引用：MySQL 反引号，PG / SQLite 双引号
+            $quoted = $driver === 'mysql' ? '`payload`' : '"payload"';
+
+            $this->assertStringContains("{$quoted} {$type}", $sql, "[{$driver}] 应为 {$type}");
         }
     }
 
@@ -46,7 +49,7 @@ final class BlueprintJsonTest extends TestCase
         $blueprint = new Blueprint('t');
         $blueprint->json('data')->nullable();
 
-        $this->assertStringContains('data JSON NULL', implode("\n", $blueprint->toSql('mysql')));
+        $this->assertStringContains('`data` JSON NULL', implode("\n", $blueprint->toSql('mysql')));
     }
 
     /**
@@ -66,8 +69,8 @@ final class BlueprintJsonTest extends TestCase
 
         $sql = implode("\n", $blueprint->toSql('mysql'));
 
-        $this->assertStringContains('version INTEGER NOT NULL', $sql);
-        $this->assertStringContains('snapshot JSON NULL', $sql);
-        $this->assertStringContains('is_current TINYINT(1) DEFAULT TRUE NOT NULL', $sql);
+        $this->assertStringContains('`version` INTEGER NOT NULL', $sql);
+        $this->assertStringContains('`snapshot` JSON NULL', $sql);
+        $this->assertStringContains('`is_current` TINYINT(1) DEFAULT TRUE NOT NULL', $sql);
     }
 }

@@ -66,7 +66,7 @@ final class Builder
                 $this->assertIdentifier($column);
             }
 
-            $this->columns = array_values($columns);
+            $this->columns = array_map($this->q(...), array_values($columns));
         }
 
         return $this;
@@ -101,7 +101,7 @@ final class Builder
 
         $this->assertIdentifier($column);
         $this->wheres[] = [
-            'sql' => sprintf('%s %s ?', $column, $operator),
+            'sql' => sprintf('%s %s ?', $this->q($column), $operator),
             'bindings' => [$value],
             'boolean' => 'and',
         ];
@@ -146,7 +146,7 @@ final class Builder
         $this->assertIdentifier($column);
         $placeholders = implode(', ', array_fill(0, count($values), '?'));
         $this->wheres[] = [
-            'sql' => sprintf('%s IN (%s)', $column, $placeholders),
+            'sql' => sprintf('%s IN (%s)', $this->q($column), $placeholders),
             'bindings' => array_values($values),
             'boolean' => 'and',
         ];
@@ -163,7 +163,7 @@ final class Builder
     public function whereNull(string $column): self
     {
         $this->assertIdentifier($column);
-        $this->wheres[] = ['sql' => sprintf('%s IS NULL', $column), 'bindings' => [], 'boolean' => 'and'];
+        $this->wheres[] = ['sql' => sprintf('%s IS NULL', $this->q($column)), 'bindings' => [], 'boolean' => 'and'];
 
         return $this;
     }
@@ -185,7 +185,7 @@ final class Builder
             throw new InvalidArgumentException(sprintf('排序方向只能是 asc 或 desc，收到 [%s]', $direction));
         }
 
-        $this->orders[] = ['column' => $column, 'direction' => strtoupper($direction)];
+        $this->orders[] = ['column' => $this->q($column), 'direction' => strtoupper($direction)];
 
         return $this;
     }
@@ -260,7 +260,7 @@ final class Builder
     public function value(string $column): mixed
     {
         $this->assertIdentifier($column);
-        $this->columns = [$column];
+        $this->columns = [$this->q($column)];
         $this->limit(1);
 
         return $this->connection->scalar($this->toSelectSql(), $this->bindings());
@@ -339,7 +339,7 @@ final class Builder
     {
         $this->assertIdentifier($column);
         $this->wheres[] = [
-            'sql' => sprintf('%s IS NOT NULL', $column),
+            'sql' => sprintf('%s IS NOT NULL', $this->q($column)),
             'bindings' => [],
             'boolean' => 'and',
         ];
@@ -445,7 +445,7 @@ final class Builder
 
         $this->assertIdentifier($column);
         $this->wheres[] = [
-            'sql' => sprintf('%s BETWEEN ? AND ?', $column),
+            'sql' => sprintf('%s BETWEEN ? AND ?', $this->q($column)),
             'bindings' => [$values[0], $values[1]],
             'boolean' => 'and',
         ];
@@ -543,7 +543,7 @@ final class Builder
     {
         foreach ($columns as $column) {
             $this->assertIdentifier($column);
-            $this->groups[] = $column;
+            $this->groups[] = $this->q($column);
         }
 
         return $this;
@@ -679,18 +679,19 @@ final class Builder
     {
         $this->assertIdentifier($column);
 
-        $sets = [sprintf('%s = %s + ?', $column, $column)];
+        $quoted = $this->q($column);
+        $sets = [sprintf('%s = %s + ?', $quoted, $quoted)];
         $bindings = [$delta];
 
         foreach ($extra as $name => $value) {
             $this->assertIdentifier((string) $name);
-            $sets[] = $name . ' = ?';
+            $sets[] = $this->q((string) $name) . ' = ?';
             $bindings[] = $value;
         }
 
         $sql = sprintf(
             'UPDATE %s SET %s%s',
-            $this->table,
+            $this->q($this->table),
             implode(', ', $sets),
             $this->toWhereSql()
         );
@@ -831,12 +832,12 @@ final class Builder
 
         foreach (array_keys($data) as $column) {
             $this->assertIdentifier((string) $column);
-            $assignments[] = sprintf('%s = ?', $column);
+            $assignments[] = sprintf('%s = ?', $this->q((string) $column));
         }
 
         $sql = sprintf(
             'UPDATE %s SET %s%s',
-            $this->table,
+            $this->q($this->table),
             implode(', ', $assignments),
             $this->toWhereSql()
         );
@@ -857,7 +858,7 @@ final class Builder
             throw new InvalidArgumentException('delete() 缺少 where 条件，已拒绝执行（防止清空表）');
         }
 
-        $sql = sprintf('DELETE FROM %s%s', $this->table, $this->toWhereSql());
+        $sql = sprintf('DELETE FROM %s%s', $this->q($this->table), $this->toWhereSql());
 
         return $this->connection->affect($sql, $this->bindings());
     }
@@ -892,7 +893,7 @@ final class Builder
         $sql = sprintf(
             'SELECT %s FROM %s%s%s%s',
             implode(', ', $this->columns),
-            $this->table,
+            $this->q($this->table),
             $this->toWhereSql(),
             $this->groups === [] ? '' : ' GROUP BY ' . implode(', ', $this->groups),
             $this->toOrderSql()
@@ -928,10 +929,15 @@ final class Builder
             $this->assertIdentifier((string) $column);
         }
 
+        $quotedColumns = array_map(
+            fn (string|int $c): string => $this->q((string) $c),
+            array_keys($data)
+        );
+
         return sprintf(
             'INSERT INTO %s (%s) VALUES (%s)',
-            $this->table,
-            implode(', ', array_keys($data)),
+            $this->q($this->table),
+            implode(', ', $quotedColumns),
             implode(', ', array_fill(0, count($data), '?'))
         );
     }
@@ -1035,5 +1041,31 @@ final class Builder
                 $identifier
             ));
         }
+    }
+
+    /**
+     * 按驱动引用标识符。
+     *
+     * MySQL 用反引号，PostgreSQL 与 SQLite 用双引号。
+     *
+     * 不加引号时，列名一旦是 SQL 保留字（key / group / order / before…），
+     * DML 会直接语法错误，而报错只有数据库的通用提示，很难定位。
+     *
+     * 支持 `table.column` 形式：拆开后分别引用，点号保留。
+     * 标识符内部若已含引号，按 SQL 标准双写转义。
+     *
+     * @param string $identifier 标识符（列名 / 表名 / 别名.列名）
+     * @return string 引用后的标识符
+     */
+    private function q(string $identifier): string
+    {
+        $quote = $this->connection->driver() === 'mysql' ? '`' : '"';
+
+        $parts = array_map(
+            static fn (string $part): string => $quote . str_replace($quote, $quote . $quote, $part) . $quote,
+            explode('.', $identifier)
+        );
+
+        return implode('.', $parts);
     }
 }

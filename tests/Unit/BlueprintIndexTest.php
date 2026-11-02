@@ -35,7 +35,7 @@ final class BlueprintIndexTest extends TestCase
 
         $sql = implode("\n", $blueprint->toSql('mysql'));
 
-        $this->assertStringContains('UNIQUE (slug)', $sql, '链式 unique 应内联');
+        $this->assertStringContains('UNIQUE (`slug`)', $sql, '链式 unique 应内联');
         $this->assertFalse(str_contains($sql, 'created_at'), '未定义 timestamps 时不应出现 created_at');
     }
 
@@ -55,7 +55,7 @@ final class BlueprintIndexTest extends TestCase
 
         $sql = implode("\n", $blueprint->toSql('mysql'));
 
-        $this->assertStringContains('CREATE UNIQUE INDEX products_sku_unique ON products (sku)', $sql);
+        $this->assertStringContains('CREATE UNIQUE INDEX `products_sku_unique` ON `products` (`sku`)', $sql);
         $this->assertFalse(
             str_contains($sql, 'updated_at UNIQUE'),
             'updated_at 不应被加上唯一索引（这是 unique() 忽略参数时的错误行为）'
@@ -77,7 +77,7 @@ final class BlueprintIndexTest extends TestCase
 
         $sql = implode("\n", $blueprint->toSql('mysql'));
 
-        $this->assertStringContains('(post_id, user_id)', $sql);
+        $this->assertStringContains('(`post_id`, `user_id`)', $sql);
     }
 
     /**
@@ -113,7 +113,60 @@ final class BlueprintIndexTest extends TestCase
 
         $sql = implode("\n", $blueprint->toSql('mysql'));
 
-        $this->assertStringContains('UNIQUE (email)', $sql);
+        $this->assertStringContains('UNIQUE (`email`)', $sql);
         $this->assertFalse(str_contains($sql, 'updated_at UNIQUE'), 'timestamps 之后调用不带参数的 unique 才会影响它');
+    }
+
+    /**
+     * 链式 index() 应生成独立的 CREATE INDEX。
+     *
+     * 曾经 index() 的签名是 `index(array|string $columns)`，不接受 null，
+     * 而兄弟方法 unique() 两种用法都支持。使用者会自然假设两者对称：
+     *
+     *   $table->string('domain', 120)->index();   ← 直接爆
+     *   Too few arguments to function Blueprint::index(), 0 passed and at least 1 expected
+     *
+     * 报错虽然明确，但第一次写迁移必踩一次。
+     *
+     * @return void
+     */
+    public function testChainedIndex(): void
+    {
+        $blueprint = new Blueprint('sites');
+        $blueprint->id();
+        $blueprint->string('domain', 120)->index();
+
+        $sql = implode("\n", $blueprint->toSql('mysql'));
+
+        $this->assertStringContains(
+            'CREATE INDEX `sites_domain_index` ON `sites` (`domain`)',
+            $sql,
+            '链式 index() 应单独生成 CREATE INDEX（三库通用的写法）'
+        );
+        $this->assertFalse(
+            str_contains($sql, 'created_at'),
+            '链式 index() 只影响它前面那一列'
+        );
+    }
+
+    /**
+     * 链式 index() 不能污染列定义。
+     *
+     * 内部用 __INDEX__ 占位符标记，toSql() 会把它解析掉再生成独立语句；
+     * 如果漏了 str_replace，表定义里会出现 `domain VARCHAR(120)__INDEX__` 这种垃圾。
+     *
+     * @return void
+     */
+    public function testChainedIndexDoesNotPolluteColumnDefinition(): void
+    {
+        $blueprint = new Blueprint('t');
+        $blueprint->string('code', 20)->index();
+
+        foreach ($blueprint->toSql('mysql') as $sql) {
+            $this->assertFalse(
+                str_contains($sql, '__INDEX__'),
+                '占位符必须被解析掉，不能出现在最终 SQL 里：' . $sql
+            );
+        }
     }
 }

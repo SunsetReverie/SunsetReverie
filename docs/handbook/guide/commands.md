@@ -31,19 +31,38 @@ php bin/sr help              # 查看全部
 生成项目骨架。
 
 ```bash
-php bin/sr new myapp                        # 单域
+php bin/sr new myapp                        # 新建子目录 myapp/
+php bin/sr new .                            # ← 生成到当前目录（不套一层）
 php bin/sr new myapp --domains=admin,web    # 多域
-php bin/sr new myapp --force                # 目录已存在时强行覆盖
+php bin/sr new myapp --force                # 目标目录非空时继续
 ```
 
-| 参数 | 说明 |
-| --- | --- |
-| `[目录]` | 目标目录，默认 `myapp` |
-| `--domains=a,b` | 生成多域结构（`app/Api/{域}/Controller`） |
-| `--force` | 目录非空时覆盖 |
+| 参数 | 默认 | 说明 |
+| --- | --- | --- |
+| `[目录]` | **`.`（当前目录）** | 目标目录；相对路径按当前工作目录解析 |
+| `--domains=a,b` | 无（单域） | 生成多域结构（`app/Api/{域}/Controller`） |
+| `--force` | 关 | 目标目录非空时仍然继续 |
 
-::: warning `--force` 会删掉目标目录里的东西
-只在确认目录可清空时用。
+::: tip 用 `.` 装进已有目录
+不传目录参数时**默认就是当前目录**，不会新建子目录：
+
+```bash
+mkdir my-api && cd my-api
+php /path/to/sunsetreverie/bin/sr new .
+```
+
+写成 `php bin/sr new .` 而不是 `php bin/sr new myapi`，
+可以避免多套一层（`myapi/myapi`）。
+:::
+
+::: warning 目录非空时默认拒绝
+```text
+目标目录非空，如需继续请加 --force（已存在的业务文件不会被删除）
+```
+
+`--force` **只覆盖骨架自带的同名文件**，你已有的业务代码不会被删除。
+但它也确实会盖掉同名的骨架文件（比如你改过的 `public/index.php`），
+所以执行前先 `git status` 确认一下。
 :::
 
 ## `serve`

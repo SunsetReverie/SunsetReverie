@@ -7,9 +7,68 @@
 
 ## [Unreleased]
 
-### 变更
+### 待办
 
-- 成功响应的 `message` 默认值：`ok` → `success`
+- 待办见文档 18.3.0「当前验收状态」的缺口列表
+
+## [1.0.0-beta.2.1] - 2026-11-02
+
+第一个真实项目（SunsetReverie-Nav）开发中暴露的问题修复。全是实测发现，不是设计推演。
+
+### 修复：Schema / Query Builder 按驱动引用标识符
+
+**这是本版最重要的一条。**
+
+`Blueprint::toSql()` 此前直接拼接表名与列名，不加引号：
+
+```php
+$sql = sprintf('CREATE TABLE %s (%s)', $this->table, implode(', ', $definitions));
+```
+
+于是列名一旦是 SQL 保留字，DDL 直接语法错误：
+
+```text
+$table->string('key', 64);
+→ CREATE TABLE settings (key VARCHAR(64) NOT NULL)
+→ MySQL: You have an error in your SQL syntax near 'key VARCHAR(64) NOT NULL...'
+```
+
+`Blueprint` 与 `Query Builder` 现在都按驱动加引号（MySQL 反引号 / PG、SQLite 双引号），
+覆盖表名、列名、索引名、`WHERE` / `ORDER BY` / `GROUP BY` / `SET` 里的列。
+
+```sql
+-- 之前：建表就失败
+CREATE TABLE settings (key VARCHAR(64), group VARCHAR(32))
+
+-- 现在：可正常使用
+CREATE TABLE `settings` (`key` VARCHAR(64), `group` VARCHAR(32), UNIQUE (`key`))
+SELECT * FROM `settings` WHERE `key` = ?
+```
+
+::: warning 只修 DDL 会更糟
+如果只改 `Blueprint` 而不管 `Query Builder`，行为从「建表就失败」变成
+「建表成功、插入才失败」——报错是 `near "group": syntax error`，
+很容易被误判成 SQL 写错了。所以两侧必须一起处理。
+:::
+
+**注意**：`selectRaw()` / `whereRaw()` 接收的是原样表达式，框架不改写里面的内容，
+需要自己加引号。
+
+### 新增：`index()` 支持链式
+
+```php
+$table->string('domain', 120)->index();   // 现在可以了
+```
+
+此前 `index()` 的签名是 `index(array|string $columns)`，不接受 `null`，
+而兄弟方法 `unique()` 两种用法都支持——使用者在 `timestamps()` 之后写
+`->index()` 会直接报 `Too few arguments`。
+
+现与 `unique()` 对称。`uniqueIndex()` 仍只接受列名（语义是「按列建索引」）。
+
+**向后兼容**：显式传参的写法完全不变。
+
+### 变更：成功响应的 `message` 默认值 `ok` → `success`
 
 ```json
 {"code":0,"message":"success","data":...,"request_id":"...","timestamp":...}
@@ -22,12 +81,44 @@ return $this->success($data, '创建成功');
 ```
 
 **影响面**：前端如果判断了 `message === 'ok'`，需要改成 `'success'`。
-更稳妥的做法是**只判断 `code === 0`**——业务码是契约，`message` 只是展示文案，
-以后还可能变。
+更稳妥的做法是**只判断 `code === 0`**——业务码是契约，`message` 只是展示文案。
 
-### 待办
+### 改进：迁移失败的定位提示
 
-- 待办见文档 18.3.0「当前验收状态」的缺口列表
+`QueryException` 的 message 里本来就有完整 SQL，但 PHP 层错误（参数个数不对、
+调用不存在的方法）只有一句话，不知道是哪张表哪一列。
+
+现在对非 SQL 错误追加：
+
+```text
+定位方式：在迁移里用 Blueprint::toSql($driver) 打印生成的语句，
+或把该迁移拆成多次单表操作以缩小范围。
+```
+
+### 文档
+
+| 文档 | 补了什么 |
+| --- | --- |
+| `commands.md` | `sr new` 的目录参数默认是 **`.`**（当前目录），不是 `myapp`；`--force` 只覆盖同名骨架文件，不删业务代码 |
+| `routing.md` | 域 `prefix` 支持多段（`api/web`），含包含关系的警告 |
+| `migration.md` | 新增「标识符加引号」与「迁移失败后的行为」两节；`index()` 与 `unique()` 的对称性 |
+
+### 验证
+
+```text
+364 用例 / 953 断言      通过
+PHPStan level 8          零错误
+新增 IdentifierQuoteTest 9 个用例（三驱动引号 + 保留字列名 CRUD + 转义）
+```
+
+### 版本策略
+
+`1.0.0-beta.2.1` 是 beta.2 的开发期修订，遵循 SemVer 的预发布标识符规则
+（`beta` / `2` / `1` 三个点分标识符）。
+
+优先级：`1.0.0-beta.2` < `1.0.0-beta.2.1` < `1.0.0-beta.3`
+
+第一个真实项目完成、所有问题修完后升 `beta.3`。
 
 ## [1.0.0-beta.2] - 2026-10-31
 

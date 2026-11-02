@@ -65,7 +65,8 @@ final class QueryGroupTest extends TestCase
             ->whereGroup(static fn ($q) => $q->where('title', 'LIKE', '%关键词%')->orWhere('content', 'LIKE', '%关键词%'))
             ->toSql();
 
-        $this->assertStringContains('(title like ? OR content like ?)', $sql, '分组必须带括号');
+        // 标识符按驱动引用（sqlite 用双引号），断言要跟着带引号
+        $this->assertStringContains('("title" like ? OR "content" like ?)', $sql, '分组必须带括号');
 
         $count = $this->db->table('posts')
             ->where('status', 1)
@@ -110,7 +111,11 @@ final class QueryGroupTest extends TestCase
             })
             ->toSql();
 
-        $this->assertStringContains('AND (id > ? AND (title like ? OR content like ?))', $sql, '嵌套括号应按层生成');
+        $this->assertStringContains(
+            'AND ("id" > ? AND ("title" like ? OR "content" like ?))',
+            $sql,
+            '嵌套括号应按层生成'
+        );
     }
 
     /**

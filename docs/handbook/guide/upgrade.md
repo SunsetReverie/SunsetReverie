@@ -1,9 +1,23 @@
 # 升级指南
 
-> 适用版本：**1.0.0-beta.2.1**（覆盖 0.15 ～ 1.0.0-beta.2.1 的全部破坏性变更）
+> 适用版本：**1.0.0-beta.2.2**（覆盖 0.15 ～ 1.0.0-beta.2.2 的全部破坏性变更）
 >
 > CHANGELOG 回答「改了什么」，这份文档回答「**我该怎么改我的代码**」。
 > 只记录会影响已有业务代码的变更——新增能力不在此列。
+
+::: tip 1.0.0-beta.2.2 没有破坏性变更
+三项都是**新增能力**，已有代码不用改：
+
+| 新增 | 需要做什么 |
+| --- | --- |
+| SMTP 支持 STARTTLS / SMTPS | 不改就是原来的明文行为；要用加密才设 `MAIL_ENCRYPTION` |
+| JWT 双 Token | `issue()` 行为不变；要用无感刷新才换 `issueTokens()` |
+| `storage:link` 命令 | 纯新增 |
+
+从 `beta.2` 及更早版本升上来：直接替换框架目录即可。
+
+细节见 [CHANGELOG](https://github.com/SunsetReverie/SunsetReverie/blob/main/CHANGELOG.md)。
+:::
 
 ---
 

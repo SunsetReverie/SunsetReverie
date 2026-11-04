@@ -5,7 +5,7 @@
 **零依赖的 PHP 微服务框架 —— 不装 Composer 也能跑**
 
 [![PHP](https://img.shields.io/badge/PHP-8.3%2B-777bb4?logo=php&logoColor=white)](https://www.php.net/)
-[![Version](https://img.shields.io/badge/version-1.0.0--beta.2.1-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.0.0--beta.2.2-blue)](CHANGELOG.md)
 [![Runtime deps](https://img.shields.io/badge/runtime%20deps-0-brightgreen)](core/Foundation/autoload.php)
 [![Tests](https://img.shields.io/badge/tests-354%20passing-brightgreen)](tests/)
 ![PHPStan](https://img.shields.io/badge/PHPStan-level%208-brightgreen)
@@ -223,7 +223,7 @@ final class PostService
 ## 当前状态
 
 ```text
-版本     1.0.0-beta.2.1（功能完整，API 可能微调）
+版本     1.0.0-beta.2.2（功能完整，API 可能微调）
 测试     354 用例 / 923 断言
 覆盖     core（除 CLI）83.2% · components 75.6%
 静态分析 PHPStan level 8（最高级别）

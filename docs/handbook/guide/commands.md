@@ -521,6 +521,87 @@ php bin/sr domain:list
 
 列出 `config/api.php` 里配置的所有域：域名、前缀、版本、中间件、错误码段位。
 
+## `storage:link`
+
+为 `storage/` 下的目录创建 public 软链。
+
+```bash
+php bin/sr storage:link storage/uploads              # → public/uploads
+php bin/sr storage:link storage/app/deep public/files  # 自定义链接路径
+```
+
+| 参数 | 默认 | 说明 |
+| --- | --- | --- |
+| `[源目录]` | 必填 | 相对项目根，如 `storage/uploads` |
+| `[链接路径]` | `public/` + 源目录名 | 相对项目根 |
+
+### 为什么需要它
+
+上传的文件落在 `storage/uploads/`，PHP 读盘没问题，但要让 Nginx 直接吐文件
+（不经过 PHP，省一个进程）就得有 public 下的入口。软链是最省事的方式：
+
+```nginx
+location /uploads/ {
+    alias /var/www/app/public/uploads/;   # 实际是软链，指向 storage/uploads
+}
+```
+
+### 三个关键行为
+
+**① 用相对路径建链**
+
+```text
+public/uploads -> ../storage/uploads
+```
+
+不是绝对路径。绝对路径在换机器、换部署目录、Docker 挂载点不同时全部失效，
+而失效的表现只是「文件 404」——很难联想到软链。
+
+**② 幂等，可以重复跑**
+
+```bash
+php bin/sr storage:link storage/uploads   # 第一次：创建
+php bin/sr storage:link storage/uploads   # 第二次：已存在，跳过（退出码 0）
+```
+
+放进部署脚本不用先判断。
+
+**③ 绝不自动删除真实目录**
+
+```text
+public/uploads 已存在且不是软链（目录）。为避免误删，已中止。
+```
+
+`public/uploads` 里如果已经有真实文件（手工拷的、旧版本遗留的），
+命令会失败退出而不是删掉重建——**数据丢失比建链失败严重得多**。
+
+### 各情况的行为
+
+| 情况 | 行为 | 退出码 |
+| --- | --- | --- |
+| 正常 | 创建 `public/uploads -> ../storage/uploads` | 0 |
+| 已存在且指向同一目标 | 提示「已存在，跳过」 | 0 |
+| 已存在但是软链、指向别处 | 移除后重建 | 0 |
+| 已存在但是普通目录/文件 | **报错中止**，不动它 | 1 |
+| 源目录不存在 | 报错，提示先创建 | 1 |
+| 缺参数 | 打印用法 | 2 |
+
+### Windows 上建不了
+
+`symlink()` 在 Windows 需要管理员权限，或开启「开发者模式」
+（设置 → 隐私和安全性 → 开发者选项）。命令失败时会给出这条提示。
+
+生产环境跑在 Linux，通常不受影响。
+
+::: tip 上传目录要可写
+软链只是给 Web 服务器一个入口，`storage/uploads` 本身仍需要 PHP 进程可写：
+
+```bash
+chmod -R 775 storage/uploads
+chown -R www-data:www-data storage/uploads
+```
+:::
+
 ## `upload:prune`
 
 ```bash

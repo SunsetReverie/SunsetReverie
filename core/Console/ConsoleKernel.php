@@ -44,6 +44,7 @@ final class ConsoleKernel
             'config:clear' => $this->configClear(),
             'key:generate' => $this->keyGenerate($args),
             'env:check' => $this->envCheck(),
+            'storage:link' => $this->storageLink($args),
             'lint:architecture' => $this->lintArchitecture($args),
             'lint:isolation' => $this->lintIsolation($args),
             'optimize' => $this->optimize(),
@@ -1902,10 +1903,208 @@ PHP;
         $this->line('  domain:list   列出已配置的 API 域');
         $this->line('  db:seed       执行 scripts/seed.php');
         $this->line('  upload:prune  清理过期的分片上传会话');
+        $this->line('  storage:link {target} [link]  创建公开目录软链（如 storage/uploads → public/uploads）');
         $this->line('  about         显示环境与框架信息');
         $this->line('  help          显示本帮助');
 
         return 0;
+    }
+
+    /**
+     * storage:link：把 storage 下的目录软链到 public。
+     *
+     * 为什么需要它：`storage/uploads` 在项目根之外（相对 public），
+     * 上传的文件由 PHP 直接读盘没问题，但要让 Nginx 直接吐文件
+     * （不走 PHP，省一个进程），就得有一个 public 下的入口。
+     *
+     * 设计取舍：
+     *
+     * - **用相对目标建链**：`public/uploads -> ../storage/uploads`。
+     *   写绝对路径的话，换机器、换部署目录全部失效。
+     * - **幂等**：已经指向同一目标就跳过，脚本里可以无脑重复跑。
+     * - **绝不自动删除**：目标位置是普通目录时直接报错退出。
+     *   `public/uploads` 里如果已经有真实文件（比如别人手工拷的），
+     *   自动删掉就是数据丢失。
+     *
+     * @param list<string> $args 参数（[0] 源目录，[1] 链接路径）
+     * @return int 退出码（0 成功 / 1 失败 / 2 用法错误）
+     */
+    private function storageLink(array $args): int
+    {
+        $positional = array_values(array_filter(
+            $args,
+            static fn (string $arg): bool => !str_starts_with($arg, '-')
+        ));
+
+        $sourceArgument = $positional[0] ?? null;
+
+        if ($sourceArgument === null || $sourceArgument === '') {
+            $this->error('用法：php bin/sr storage:link <源目录> [软链路径]');
+            $this->line('');
+            $this->line('  例：php bin/sr storage:link storage/uploads');
+            $this->line('      → public/uploads -> ../storage/uploads');
+            $this->line('');
+
+            return 2;
+        }
+
+        $source = $this->normalizePath($sourceArgument);
+        $sourcePath = $this->app->basePath($source);
+
+        if (!is_dir($sourcePath)) {
+            $this->error(sprintf('源目录不存在：%s（请先创建）', $source));
+
+            return 1;
+        }
+
+        $linkArgument = $positional[1] ?? null;
+
+        $link = $linkArgument !== null && $linkArgument !== ''
+            ? $this->normalizePath($linkArgument)
+            : 'public/' . basename($source);
+
+        $linkPath = $this->app->basePath($link);
+
+        // ── 目标位置已经存在：分三种情况 ──
+        if (is_link($linkPath)) {
+            $currentTarget = realpath($linkPath);
+            $wantedTarget = realpath($sourcePath);
+
+            if ($currentTarget !== false && $wantedTarget !== false && $currentTarget === $wantedTarget) {
+                $this->line(sprintf('  ✓ %s 已存在，跳过', $link));
+
+                return 0;
+            }
+
+            /*
+             * 指向别处：先删再建。
+             *
+             * 这里只删「软链本身」——unlink 对软链不碰目标，
+             * 所以不会误删它原来指向的目录。
+             */
+            if (!@unlink($linkPath)) {
+                $this->error(sprintf('软链 %s 指向别处，且无法删除（检查文件权限）', $link));
+
+                return 1;
+            }
+
+            $this->line(sprintf('  · %s 原指向 %s，已移除后重建', $link, $currentTarget !== false ? $currentTarget : '（失效目标）'));
+        } elseif (file_exists($linkPath)) {
+            /*
+             * 普通目录或文件——绝对不自动删。
+             *
+             * 使用者可能在里面放了真实文件，删了就是数据丢失。
+             * 让他自己确认后再处理。
+             */
+            $this->error(sprintf(
+                '%s 已存在且不是软链（%s）。为避免误删，已中止。'
+                . '请确认后手动移走它，或换一个链接路径。',
+                $link,
+                is_dir($linkPath) ? '目录' : '文件'
+            ));
+
+            return 1;
+        }
+
+        // ── 建链 ──
+        $linkDirectory = dirname($linkPath);
+
+        if (!is_dir($linkDirectory) && !@mkdir($linkDirectory, 0755, true) && !is_dir($linkDirectory)) {
+            $this->error(sprintf('无法创建目录：%s', dirname($link)));
+
+            return 1;
+        }
+
+        /*
+         * 用相对路径作为链接目标，不用绝对路径。
+         *
+         * 绝对路径在换机器、换部署目录、Docker 里挂载点不同时全部失效——
+         * 而软链失效的表现是「文件 404」，排查起来很费时间。
+         */
+        $relativeTarget = $this->relativeLinkTarget(
+            $linkDirectory,
+            rtrim($sourcePath, '/')
+        );
+
+        if (!@symlink($relativeTarget, $linkPath)) {
+            $error = error_get_last();
+            $message = is_array($error) ? $error['message'] : '';
+
+            $this->error(sprintf('创建软链失败：%s -> %s', $link, $relativeTarget));
+
+            if (PHP_OS_FAMILY === 'Windows') {
+                $this->line('  Windows 上创建软链需要管理员权限，或开启「开发者模式」（设置 → 隐私和安全性 → 开发者选项）。');
+            } elseif (str_contains($message, 'Permission denied')) {
+                $this->line('  权限不足：所在目录需要写权限。');
+            }
+
+            return 1;
+        }
+
+        $this->line(sprintf('  ✓ %s -> %s', $link, $relativeTarget));
+
+        return 0;
+    }
+
+    /**
+     * 归一化相对路径（去首尾斜杠、折叠 ./ 和多余分隔符）。
+     *
+     * @param string $path 原始路径
+     * @return string 归一化后的相对路径
+     */
+    private function normalizePath(string $path): string
+    {
+        $path = str_replace('\\', '/', trim($path));
+        $path = trim($path, '/');
+
+        // 折叠 ./ 与连续斜杠，同时处理 a/../b
+        $parts = [];
+
+        foreach (explode('/', $path) as $part) {
+            if ($part === '' || $part === '.') {
+                continue;
+            }
+
+            if ($part === '..') {
+                array_pop($parts);
+
+                continue;
+            }
+
+            $parts[] = $part;
+        }
+
+        return implode('/', $parts);
+    }
+
+    /**
+     * 计算从 $from 目录到 $to 目录的相对路径。
+     *
+     * 例：from = /a/b/public，to = /a/b/storage/uploads
+     *     → ../storage/uploads
+     *
+     * @param string $from 起点目录（绝对路径）
+     * @param string $to 目标目录（绝对路径）
+     * @return string 相对路径
+     */
+    private function relativeLinkTarget(string $from, string $to): string
+    {
+        $fromParts = array_values(array_filter(explode('/', str_replace('\\', '/', $from)), static fn (string $p): bool => $p !== ''));
+        $toParts = array_values(array_filter(explode('/', str_replace('\\', '/', $to)), static fn (string $p): bool => $p !== ''));
+
+        $common = 0;
+        $max = min(count($fromParts), count($toParts));
+
+        while ($common < $max && $fromParts[$common] === $toParts[$common]) {
+            $common++;
+        }
+
+        $up = array_fill(0, count($fromParts) - $common, '..');
+        $down = array_slice($toParts, $common);
+
+        $segments = [...$up, ...$down];
+
+        return $segments === [] ? '.' : implode('/', $segments);
     }
 
     /**

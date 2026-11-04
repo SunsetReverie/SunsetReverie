@@ -11,6 +11,155 @@
 
 - 待办见文档 18.3.0「当前验收状态」的缺口列表
 
+## [1.0.0-beta.2.2] - 2026-11-04
+
+三项：SMTP 加密、JWT 双 Token、storage:link 命令。
+前两项补齐的是「实际用不了」的缺口，第三项是新能力。
+
+### 新增：SMTP 支持 STARTTLS / SMTPS
+
+此前 `SmtpMailer` 用 `fsockopen` 明文直连（默认 25 端口），而 QQ、163、Gmail、
+阿里云邮件推送这些主流服务都要求 465（SMTPS）或 587（STARTTLS）——
+**内置 SMTP 在公网发信这条路实际是堵死的**。
+
+改之前的实测：
+
+```text
+QQ 465 → 3.1s 超时：SMTP 无响应（连接可能已被关闭）
+QQ 587 → 530 Login fail. A secure connection is requiered(such as ssl)
+```
+
+现在支持三种连接方式：
+
+| `MAIL_ENCRYPTION` | 协议 | 端口 |
+| --- | --- | --- |
+| （空） | 明文 | 25 / 1025（内网 relay、mailpit） |
+| `tls` | STARTTLS | 587 |
+| `ssl` | 隐式 TLS（SMTPS） | 465 |
+
+改之后的同一次测试：
+
+```text
+QQ 465 → 535 Login fail（0.4s）   ← TLS 握手成功，只是密码是假的
+QQ 587 → 535 Login fail（0.5s）   ← STARTTLS 成功，走到 AUTH 了
+```
+
+实现要点：
+
+- 改用 `stream_socket_client`——`fsockopen` 不接受 stream context，
+  没法设置 SNI 和证书校验选项
+- STARTTLS 升级后**重新 EHLO**（RFC 3207 要求客户端丢弃升级前收到的扩展信息）
+- 证书校验默认开启（`MAIL_VERIFY_PEER=true`），只有内网自签证书才关
+- 只允许 TLS 1.2 / 1.3（1.0 / 1.1 已废弃，多数服务已停用）
+
+新增环境变量：`MAIL_ENCRYPTION`、`MAIL_VERIFY_PEER`。
+
+**顺带修了一处文档错误**：`Message` 的字段是 `to` / `subject` / `html` / `text` / `toName`，
+没有 `body`，也没有 `from`（发件人是 `SmtpMailer` 的构造参数）。skill 里写错了。
+
+### 新增：JWT 双 Token（refresh + 无感刷新）
+
+此前 `JwtGuard` 只有 `issue()` / `user()` / `tryUser()`——签发出去就管不了。
+登出只是前端删本地 token，服务端依旧认。使用者要么频繁重新登录，
+要么把 `ttl` 调得很长（泄露后窗口太大）。
+
+现在支持标准的「短 access + 长 refresh」：
+
+```php
+Auth::jwt()->issueTokens('42', ['name' => '夕梦']);
+// → access_token / refresh_token / token_type / expires_in
+
+Auth::jwt()->refresh($refreshToken);   // 换新的一对，旧的立即作废
+Auth::jwt()->logout($refreshToken);    // 撤销（幂等）
+Auth::jwt()->revokeAll('42');         // 该用户所有旧 Token 失效
+```
+
+三条核心机制：
+
+| 机制 | 作用 |
+| --- | --- |
+| **轮换** | 每次刷新生成新的 refresh token，旧的立即删除——被窃取后最多用一次 |
+| **宽限期** | 并发刷新时（多个请求同时带同一个 token），期内重放返回**同一对**，不会把用户踢下线 |
+| **类型隔离** | Token 带 `typ`，refresh token 不能当 access 用 |
+
+**`revokeAll()` 的边界**：不开 `enforce_version` 时对**已签发的 access 无效**——
+JWT 无状态，签发出去就管不了，这是它的本性而非缺陷。开启后每个认证请求
+多一次缓存读取，默认关闭。
+
+refresh token 存缓存（sha256 摘要，不是原文），`array` 驱动不可用
+（进程结束就没了），必须 `file` / `redis` / `apcu`。
+
+新增环境变量：`JWT_REFRESH_TTL`、`JWT_REFRESH_GRACE`、
+`JWT_ENFORCE_VERSION`、`JWT_ENFORCE_AUDIENCE`。
+
+**架构变更**：`auth` 组件新增对 `cache` 的依赖（refresh token 必须落在共享存储
+才能撤销），已加进 `ArchitectureChecker` 的白名单——和现有的
+`ratelimit → cache` 同一类需求。
+
+### 新增：`storage:link` 命令
+
+为 `storage/` 下的目录创建 public 软链，让 Nginx 能直接吐文件（不经过 PHP）。
+
+```bash
+php bin/sr storage:link storage/uploads              # → public/uploads
+php bin/sr storage:link storage/app/deep public/files  # 自定义链接路径
+```
+
+三个设计点：
+
+**① 用相对路径建链**：`public/uploads -> ../storage/uploads`。
+绝对路径在换机器、换部署目录、Docker 挂载点不同时全部失效，
+而失效表现只是「文件 404」，很难联想到软链。
+
+**② 幂等**：已指向同一目标就跳过（退出码 0），部署脚本可以无脑重复跑。
+
+**③ 绝不自动删除真实目录**：目标位置是普通目录时直接报错退出。
+`public/uploads` 里如果已经有真实文件（手工拷的、旧版本遗留的），
+删掉就是数据丢失——**建链失败比丢数据好**。
+
+| 情况 | 行为 | 退出码 |
+| --- | --- | --- |
+| 正常 | 创建软链 | 0 |
+| 已存在且指向同一目标 | 提示跳过 | 0 |
+| 已存在但是软链、指向别处 | 移除后重建 | 0 |
+| 已存在但是普通目录/文件 | **报错中止**，不动它 | 1 |
+| 源目录不存在 | 报错 | 1 |
+| 缺参数 | 打印用法 | 2 |
+
+Windows 上 `symlink()` 需要管理员权限或开启开发者模式，失败时给出提示。
+
+### 文档
+
+| 文档 | 补了什么 |
+| --- | --- |
+| `mail.md` | 重写「加密方式」一节（原来写的是「不支持 TLS」） |
+| `auth.md` | 新增「双 Token」整节：刷新接口、轮换宽限期、登出、强制下线、前端怎么处理 |
+| `config.md` | 补 4 个 JWT 变量 |
+| `commands.md` | 新增 `storage:link` 一节 |
+
+skill（`~/.codebuddy/skills/sunset-reverie`）同步更新：`components.md` 的邮件/认证/
+上传三节，`pitfalls.md` 的 `revokeAll` 边界与缓存驱动限制。
+
+### 验证
+
+```text
+392 用例 / 1029 断言    通过（+23：SMTP 5 + JWT 16 + storage:link 7）
+PHPStan level 8        零错误
+架构检查               8 项
+文档构建               0 dead link
+```
+
+SMTP 的测试用 `pcntl_fork` 起假服务器验命令序列（不连真实服务），
+覆盖了「STARTTLS 失败后不能继续明文发信」这类关键边界。
+
+### 版本策略
+
+`1.0.0-beta.2.2` 继续沿用开发期小步递增：项目完成、问题修完再升 `beta.3`。
+
+优先级：`1.0.0-beta.2.1` < `1.0.0-beta.2.2` < `1.0.0-beta.3`
+
+
+
 ## [1.0.0-beta.2.1] - 2026-11-02
 
 第一个真实项目（SunsetReverie-Nav）开发中暴露的问题修复。全是实测发现，不是设计推演。

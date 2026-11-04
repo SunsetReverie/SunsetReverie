@@ -104,7 +104,11 @@ php bin/sr key:generate
 | --- | --- | --- |
 | `AUTH_GUARD` | `jwt` | 默认守卫 |
 | `JWT_SECRET` | 空 | `jwt:secret` 生成。**换它会让所有 token 失效** |
-| `JWT_TTL` | `7200` | token 有效期（秒） |
+| `JWT_TTL` | `7200` | access token 有效期（秒） |
+| `JWT_REFRESH_TTL` | `2592000` | refresh token 有效期（秒，30 天） |
+| `JWT_REFRESH_GRACE` | `30` | 并发刷新宽限期（秒），`0` 关闭 |
+| `JWT_ENFORCE_VERSION` | `false` | 开启后 `revokeAll()` 能让旧 Token 立即失效（每请求多一次缓存读） |
+| `JWT_ENFORCE_AUDIENCE` | `true` | 多域项目保持开启，防止 Token 跨域复用 |
 
 ### 数据库
 

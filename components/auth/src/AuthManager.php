@@ -6,6 +6,8 @@ namespace SunsetReverie\Auth;
 
 use Closure;
 use SunsetReverie\Api\DomainContext;
+use SunsetReverie\Cache\CacheManager;
+use SunsetReverie\Cache\CacheStoreInterface;
 use SunsetReverie\Container\Container;
 use SunsetReverie\Http\Request;
 use SunsetReverie\Auth\Exception\AuthenticationException;
@@ -168,6 +170,46 @@ final class AuthManager
             (string) ($config['claim_key'] ?? 'sub'),
             $this->domainContext,
             (bool) ($config['enforce_audience'] ?? true),
+            // refresh token 要能撤销，必须有缓存；缓存不可用时为 null，
+            // 此时 refresh/issueTokens 会抛明确异常，issue/user 照常工作
+            $this->cacheStore(),
+            (int) ($config['refresh_ttl'] ?? 2592000),
+            (int) ($config['refresh_grace'] ?? 30),
+            (bool) ($config['enforce_version'] ?? false),
         );
+    }
+
+    /**
+     * 取默认缓存存储。
+     *
+     * 缓存组件没装或没配时返回 null——认证本身不该因为缓存缺失而整体不可用，
+     * 只是用不了双 Token。
+     *
+     * @return CacheStoreInterface|null 缓存存储
+     */
+    private function cacheStore(): ?CacheStoreInterface
+    {
+        $container = $this->container;
+
+        // 没有容器（比如手工 new 出来测试）时没有缓存可用
+        if ($container === null) {
+            return null;
+        }
+
+        try {
+            $manager = $container->get(CacheManager::class);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if (!$manager instanceof CacheManager) {
+            return null;
+        }
+
+        try {
+            return $manager->store();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }

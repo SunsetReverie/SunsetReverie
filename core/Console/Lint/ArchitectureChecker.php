@@ -43,6 +43,14 @@ final class ArchitectureChecker
         'queue' => ['database'],
         // log 驱动的邮件器（本地开发不发真邮件）需要写日志
         'mail' => ['log'],
+        /*
+         * refresh token 必须可撤销、可轮换、可跨请求识别——JWT 本身无状态做不到，
+         * 只能落在共享存储上。和 ratelimit 的理由相同：复用缓存驱动，不自造一套。
+         *
+         * 依赖是弱耦合的：AuthManager 用 try/catch 取缓存，缓存不可用时
+         * 降级为「只有 access token」，认证本身不受影响。
+         */
+        'auth' => ['cache'],
     ];
 
     /** @var list<string> 组件名（由 components/ 目录扫描得到） */

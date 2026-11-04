@@ -101,6 +101,141 @@ Auth::jwt()->issue('42', [
 ]);
 ```
 
+## 双 Token（推荐）
+
+单个 `issue()` 只发 access token（默认 2 小时）。用户要么频繁重新登录，要么把
+`ttl` 调得很长——前者体验差，后者泄露后窗口太大。
+
+标准做法是**短 access + 长 refresh**：
+
+```php
+public function login(LoginRequest $request): array
+{
+    $user = $this->users->findByEmail($request->validated()['email']);
+
+    if ($user === null || !password_verify($request->validated()['password'], $user['password_hash'])) {
+        throw new HttpException(401, ErrorCode::CredentialsInvalid->value, '账号或密码错误');
+    }
+
+    return Auth::jwt()->issueTokens((string) $user['id'], ['name' => $user['name']]);
+}
+```
+
+返回结构可以直接当响应体的 `data`：
+
+```json
+{
+  "access_token": "eyJ...",
+  "refresh_token": "eyJ...",
+  "token_type": "Bearer",
+  "expires_in": 7200
+}
+```
+
+### 刷新接口
+
+```php
+public function refresh(Request $request): array
+{
+    $token = (string) $request->json('refresh_token', '');
+
+    return Auth::jwt()->refresh($token);
+}
+```
+
+返回的是**新的一对**，旧 refresh token 同时作废（轮换）。
+
+::: warning 刷新失败要跳登录
+`refresh()` 在 token 过期、已被使用过（超出宽限期）、或已登出时抛
+`AuthenticationException`（20002）。
+
+前端遇到 20002 就清掉本地 token 跳登录页——不要重试。
+:::
+
+### 轮换与宽限期
+
+| 机制 | 作用 |
+| --- | --- |
+| **轮换** | 每次刷新生成新的 refresh token，旧的立即删除——被窃取后最多用一次 |
+| **宽限期** | 并发刷新时（多个请求同时带同一个 token），期内重放返回**同一对**，不会把用户踢下线 |
+
+宽限期默认 30 秒（`JWT_REFRESH_GRACE`）。关掉的话前端必须自己做「单飞」
+（同一时刻只发一个刷新请求），否则并发会失败。
+
+### 登出
+
+```php
+public function logout(Request $request): array
+{
+    Auth::jwt()->logout((string) $request->json('refresh_token', ''));
+
+    return $this->success(null, '已退出');
+}
+```
+
+只撤销 refresh token，access token 会自然过期（默认 2 小时内仍有效）。
+
+**登出是幂等的**：token 无效或已过期也不抛异常——否则「token 过期后点登出」会报错。
+
+### 强制下线（改密码 / 封号）
+
+```php
+// 改密码成功后
+Auth::jwt()->revokeAll((string) $user['id']);
+```
+
+::: warning 需要开启 `enforce_version`
+```ini
+JWT_ENFORCE_VERSION=true
+```
+
+开启后每个带认证的请求会多一次缓存读取（比对 Token 里的 `ver` 与当前版本号）。
+
+**不开启时 `revokeAll()` 对已签发的 access token 无效**——这是 JWT 无状态的本性，
+不是 bug。不开的话就只能等 access 自然过期（2 小时内），或者把 ttl 调短。
+:::
+
+### 两种 Token 不能混用
+
+| Token | 能用在哪 |
+| --- | --- |
+| access | 访问接口（`Authorization: Bearer`） |
+| refresh | **只能**调刷新接口 |
+
+拿 refresh token 去访问接口会 401（`Token 类型不匹配`）——
+否则 30 天有效期的 refresh 就等于 30 天的访问权限，「短 access」的设计完全失效。
+
+### 存储要求
+
+refresh token 要能撤销、能轮换，所以存在**缓存**里（存的是 sha256 摘要，不是原文）。
+
+| 缓存驱动 | 是否可用 |
+| --- | --- |
+| `file` / `redis` / `apcu` | ✅ |
+| `array` | ❌ 进程结束就没了，刷新必然失败 |
+
+缓存不可用时 `issueTokens()` 会抛明确异常，而 `issue()`（单 access）照常工作。
+
+### 前端怎么处理
+
+```ts
+// 请求拦截：带上 access token
+config.headers.Authorization = `Bearer ${accessToken}`
+
+// 响应拦截：401 + code 20002 时尝试刷新
+if (code === 20002) {
+  const pair = await axios.post('/auth/refresh', { refresh_token: refreshToken })
+  // 存新的两个 token，重放原请求
+}
+```
+
+::: tip 并发请求的坑
+页面同时发 5 个请求，全部 401，会触发 5 次刷新。
+
+宽限期能兜住（都返回同一对），但更稳妥的做法是**前端单飞**：
+用一个 promise 挡住后续刷新请求，第一个完成后大家共用结果。
+:::
+
 ## 域绑定（多域项目必读）
 
 **同一个 token 不能跨域使用。**
@@ -212,6 +347,20 @@ php bin/sr jwt:secret     # 生成并写入 .env
 换之前想清楚：是**所有** token 都有安全问题，还是只换某几个用户？
 后者应该做的是「让那几个用户的 token 失效」，不是换全局密钥。
 :::
+
+### `refresh_ttl` 决定多久要重新登录
+
+`refresh_ttl`（默认 30 天）是「用户多久不活跃就被踢出」的实际值。
+
+它要求缓存可用——`array` 驱动进程结束就没了，不能用。
+
+### `enforce_version` 的代价
+
+开启后每个带认证的请求会多一次缓存读取（比对 Token 里的 `ver`）。
+
+换来的是 `revokeAll()` 能**立即**让某用户所有旧 Token 失效（改密码、封号、强制下线）。
+
+不开启的话，只能等 access 自然过期（`ttl` 秒内），或者把 `ttl` 调短。
 
 ### `leeway` 是给分布式部署的
 

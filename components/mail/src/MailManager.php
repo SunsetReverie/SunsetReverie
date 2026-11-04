@@ -64,6 +64,9 @@ final class MailManager
                 from: (string) ($mailerConfig['from'] ?? 'noreply@example.com'),
                 fromName: (string) ($mailerConfig['from_name'] ?? ''),
                 timeout: (int) ($mailerConfig['timeout'] ?? 10),
+                // null / 'ssl'（465）/ 'tls'（587）；空字符串归一成 null
+                encryption: $this->normalizeEncryption($mailerConfig['encryption'] ?? null),
+                verifyPeer: (bool) ($mailerConfig['verify_peer'] ?? true),
             ),
             default => throw new MailException(sprintf(
                 '不支持的邮件驱动 [%s]，可用：log / smtp',
@@ -98,5 +101,26 @@ final class MailManager
         $this->mailers[$name] = $mailer;
 
         return $this;
+    }
+
+    /**
+     * 归一化加密配置。
+     *
+     * `.env` 里没设置时读到的是空字符串（`MAIL_ENCRYPTION=`），
+     * 直接传给 SmtpMailer 会被当成「不支持的值」报错。
+     * 这里把空串、空格归一成 null（明文连接）。
+     *
+     * @param mixed $value 配置值
+     * @return string|null null / 'ssl' / 'tls'
+     */
+    private function normalizeEncryption(mixed $value): ?string
+    {
+        if (!is_string($value)) {
+            return null;
+        }
+
+        $normalized = strtolower(trim($value));
+
+        return $normalized === '' ? null : $normalized;
     }
 }

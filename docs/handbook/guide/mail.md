@@ -97,37 +97,87 @@ Application::getInstance()->mail()->send($message);
 ],
 ```
 
-::: danger 不支持 STARTTLS / SMTPS
-`SmtpMailer` 只实现：**EHLO、AUTH LOGIN、DATA**。
+### 加密方式（`encryption`）
 
-类的注释解释了为什么：
+| 值 | 协议 | 端口 | 适用 |
+| --- | --- | --- | --- |
+| （空） | 明文 | 25 / 1025 | 内网 relay、mailpit |
+| `tls` | STARTTLS | 587 | QQ、Gmail、企业邮箱 |
+| `ssl` | 隐式 TLS（SMTPS） | 465 | QQ、163、Gmail、阿里云 |
 
-> 证书校验、SNI、协议降级这些细节手写极易出错，而"发邮件"这件事 90% 的场景
-> 是走内网 relay 或第三方 API，与其提供一个半可靠的 TLS 实现，不如明确边界。
+```ini
+# .env —— QQ 邮箱
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.qq.com
+MAIL_PORT=465
+MAIL_ENCRYPTION=ssl
+MAIL_USERNAME=your-qq@qq.com
+MAIL_PASSWORD=授权码              # 不是登录密码
+```
 
-**所以连 465（SMTPS）和 587（STARTTLS）会失败**。
+```ini
+# .env —— 587 的 STARTTLS
+MAIL_HOST=smtp.qq.com
+MAIL_PORT=587
+MAIL_ENCRYPTION=tls
+```
+
+主流服务商对照：
+
+| 服务 | 端口 | `encryption` |
+| --- | --- | --- |
+| QQ 邮箱 | 465 / 587 | `ssl` / `tls` |
+| 163 邮箱 | 465 | `ssl` |
+| Gmail | 465 / 587 | `ssl` / `tls` |
+| 阿里云邮件推送 | 465 | `ssl` |
+| 内网 relay / mailpit | 25 / 1025 | （留空） |
+
+::: tip STARTTLS 的完整流程
+`encryption=tls` 时客户端会走：
+
+```text
+连接 → 220 → EHLO(250) → STARTTLS → 220 → TLS 握手 → **重新 EHLO** → AUTH LOGIN → ...
+```
+
+握手后必须重新 `EHLO`——RFC 3207 要求客户端丢弃 TLS 之前收到的扩展信息。
+漏了这一步，部分服务器会拒绝后续命令。
 :::
 
-### 怎么解决
+::: warning 证书校验默认开启
+`MAIL_VERIFY_PEER=true`（默认）会校验对端证书和域名。
+
+只有连**内网自签证书**的 relay 才应该设成 `false`——关掉等于放弃中间人防护。
+公网服务（QQ / Gmail 等）的证书都是正规 CA 签发的，不需要关。
+:::
+
+::: danger 云服务器封禁 25 端口
+阿里云、腾讯云等默认封禁**出站 25 端口**（防垃圾邮件），需要工单解封。
+而且解封后，很多收件方仍会拒收来自云 IP 的 25 端口邮件。
+
+所以公网发信请直接用 465 / 587。
+:::
+
+### 仍然建议本机 relay 的场景
 
 | 场景 | 做法 |
 | --- | --- |
-| 内网有 SMTP relay | 直连 relay 的 25 端口（通常不加密） |
-| 必须走公网 SMTP（如 Gmail） | **本机装一个 relay**（postfix / msmtp），由它做 TLS |
-| 云厂商邮件服务 | 用它们的 HTTP API，自己写一个 Mailer（见下） |
+| 内网有 SMTP relay | 直连 relay 的 25 端口，`encryption` 留空 |
+| 需要签名 / 重试 / 退信处理 | 本机装 postfix / msmtp，由它转发并做 DKIM |
+| 云厂商邮件服务 | 也可以用它们的 HTTP API，自己实现 `MailerInterface` |
 
-本机 relay 方案实际长这样：
+本机 relay 方案：
 
 ```ini
 # .env
 MAIL_MAILER=smtp
 MAIL_HOST=127.0.0.1        # 本机的 postfix
 MAIL_PORT=25
+# encryption 留空
 ```
 
-postfix 负责 `smtp.gmail.com:587` + TLS + 认证，你的代码只连 localhost。
+postfix 负责 `smtp.gmail.com:587` + TLS + 认证 + DKIM，你的代码只连 localhost。
 
-**好处**：证书、协议、重试都交给成熟的 MTA，代码保持简单。
+**好处**：证书、协议、重试、签名都交给成熟的 MTA。
 
 ## 用队列
 

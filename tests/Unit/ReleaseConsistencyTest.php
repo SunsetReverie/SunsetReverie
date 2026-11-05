@@ -66,14 +66,19 @@ final class ReleaseConsistencyTest extends TestCase
         $changelog = (string) file_get_contents($this->root . '/CHANGELOG.md');
 
         /*
-         * 只匹配 `x.y.z`，**跳过预发布版本**（如 `1.0.0-beta.1`）。
+         * 连预发布一起匹配：`1.0.0-beta.2`、`1.0.0-beta.2.3` 都要比。
          *
-         * 预发布的排序规则和正式版不同（1.0.0-beta.1 < 1.0.0-beta.2 < 1.0.0），
-         * 用 version_compare 比较时还要处理同一个正式版之前的多个 beta ——
-         * 这段逻辑本身容易写错，而它保护的是「补条目时插错位置」这种低级错误，
-         * 不值得为预发布引入更复杂的比较。
+         * 之前这里只匹配三段 `x.y.z`，注释写「预发布的排序规则和正式版不同，
+         * 不值得引入更复杂的比较」——**那个判断是错的**。
+         *
+         * PHP 内置的 version_compare 已经完整实现了 SemVer 预发布规则：
+         *
+         *   1.0.0-beta.2 < 1.0.0-beta.2.1 < 1.0.0-beta.2.2 < 1.0.0-beta.3 < 1.0.0
+         *
+         * 代价只有一行正则，而漏掉的正是本项目当前所处的阶段——
+         * 整个 beta 期间的顺序错乱都没被检查过。
          */
-        preg_match_all('/^## \[(\d+\.\d+\.\d+)\]/m', $changelog, $matches);
+        preg_match_all('/^## \[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\]/m', $changelog, $matches);
 
         $versions = $matches[1];
         $this->assertTrue($versions !== [], 'CHANGELOG 里没有解析到任何版本号');
@@ -94,6 +99,79 @@ final class ReleaseConsistencyTest extends TestCase
 
             $previous = $version;
         }
+    }
+
+    /**
+     * CHANGELOG 里不能有重复的版本号。
+     *
+     * 踩过的坑：给 upload 那批改动写条目时沿用了 `1.0.0-beta.2.2`，
+     * 于是同一个版本号出现了两次（11-04 和 11-05），
+     * 而且新条目被插在旧的下方。
+     *
+     * `testChangelogVersionsAreDescending` 当时抓不到——它跳过了预发布版本。
+     * 两条测试配合：一条查重复，一条查顺序。
+     *
+     * @return void
+     */
+    public function testChangelogHasNoDuplicateVersions(): void
+    {
+        $changelog = (string) file_get_contents($this->root . '/CHANGELOG.md');
+
+        preg_match_all('/^## \[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\]/m', $changelog, $matches);
+
+        $versions = $matches[1];
+        $this->assertTrue($versions !== [], 'CHANGELOG 里没有解析到任何版本号');
+
+        $counts = array_count_values($versions);
+        $duplicated = array_keys(array_filter($counts, static fn (int $n): bool => $n > 1));
+
+        // 附上每个重复版本出现的行号，方便直接定位
+        $detail = [];
+
+        foreach ($duplicated as $version) {
+            $lines = [];
+
+            foreach ($versions as $index => $found) {
+                if ($found === $version) {
+                    $lines[] = '第 ' . $this->nthVersionLine($changelog, $version, count($lines) + 1) . ' 行';
+                }
+            }
+
+            $detail[] = sprintf('%s（%d 次：%s）', $version, $counts[$version], implode('、', $lines));
+        }
+
+        $this->assertSame(
+            [],
+            $detail,
+            "CHANGELOG 里有重复的版本号：\n  " . implode("\n  ", $detail)
+            . "\n\n一个版本只对应一批改动。如果确实是两批独立的工作，"
+            . "就把后来的那个版本号 +1（如 beta.2.2 → beta.2.3）。"
+        );
+    }
+
+    /**
+     * 找某个版本号第 N 次出现的行号（用于报错定位）。
+     *
+     * @param string $changelog 全文
+     * @param string $version 版本号
+     * @param int $occurrence 第几次出现（从 1 开始）
+     * @return int 行号
+     */
+    private function nthVersionLine(string $changelog, string $version, int $occurrence): int
+    {
+        $seen = 0;
+
+        foreach (explode("\n", $changelog) as $index => $line) {
+            if (str_starts_with($line, '## [' . $version . ']')) {
+                $seen++;
+
+                if ($seen === $occurrence) {
+                    return $index + 1;
+                }
+            }
+        }
+
+        return 0;
     }
 
     /**

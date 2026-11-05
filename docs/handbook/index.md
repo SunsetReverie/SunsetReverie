@@ -55,7 +55,7 @@ hero:
 <div class="sr-feature">
 <span class="sr-icon" style="--icon: url(/icons/circle-check.svg)"></span>
 <h3>可验证</h3>
-<p>354 个用例 · PHPStan level 8 · 架构检查 8 项 · 三版本 × 三数据库实测。</p>
+<p>398 个用例 · PHPStan level 8 · 架构检查 8 项 · 三版本 × 三数据库实测。</p>
 </div>
 
 </div>
@@ -129,7 +129,7 @@ final class PostService
 
 | 项 | 结果 |
 | --- | --- |
-| 测试 | 354 用例 / 923 断言 |
+| 测试 | 近 400 用例 / 1000+ 断言 |
 | 静态分析 | PHPStan **level 8** 零错误 |
 | 架构检查 | 8 项全过 |
 | 覆盖率 | `core`（除 CLI）83.2% · `components` 75.6% |

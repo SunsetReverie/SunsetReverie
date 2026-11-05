@@ -395,4 +395,96 @@ final class DocsConsistencyTest extends TestCase
 
         return null;
     }
+
+    /**
+     * 文档里写的测试用例数必须等于实际数量。
+     *
+     * 这个数字硬编码在 README、首页、install.md 里，每次加测试都会过期。
+     * 之前连续两轮都漏改：349 停留了很久，改成 354 时又只改了一半。
+     *
+     * 用例数 == 测试方法数（本项目不用 dataProvider），所以直接数文件即可，
+     * 不需要真的跑一遍套件。
+     *
+     * @return void
+     */
+    public function testDocsStateActualTestCount(): void
+    {
+        if (!$this->hasDocs()) {
+            return;
+        }
+
+        $root = dirname(__DIR__, 2);
+
+        // 统计所有测试方法
+        $actual = 0;
+
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($root . '/tests', \FilesystemIterator::SKIP_DOTS)
+        );
+
+        foreach ($iterator as $file) {
+            if (!$file instanceof \SplFileInfo || $file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $source = (string) file_get_contents($file->getPathname());
+            $actual += (int) preg_match_all('/^\s+public function test\w+\(/m', $source);
+        }
+
+        $this->assertTrue($actual > 0, '没统计到任何测试方法，正则可能失效了');
+
+        /*
+         * 只精确校验 README 一处。
+         *
+         * 首页和 install.md 之前也写了具体数字，但三处同时维护成本太高——
+         * 加一个测试要改三个文件，还容易漏。现在那两处改成「近 400 用例」
+         * 这类模糊表述，只有 README 保持精确（它是仓库门面，读者第一眼看到）。
+         */
+        $targets = [$root . '/README.md'];
+
+        $bad = [];
+
+        foreach ($targets as $path) {
+            if (!is_file($path)) {
+                continue;
+            }
+
+            $content = (string) file_get_contents($path);
+            $rel = str_replace($root . '/', '', $path);
+
+            /*
+             * 匹配两种写法：
+             *   tests-399%20passing      （shields 徽章）
+             *   399 用例 / 399 个用例     （正文）
+             *
+             * PREG_UNMATCHED_AS_NULL 让没参与匹配的分组是 null 而不是不存在，
+             * 否则 PHPStan 会抱怨「Offset 1 might not exist」。
+             */
+            preg_match_all(
+                '/tests-(\d+)%20passing|(\d+)\s*个?用例/',
+                $content,
+                $m,
+                PREG_SET_ORDER | PREG_UNMATCHED_AS_NULL
+            );
+
+            foreach ($m as $match) {
+                $declared = (int) ($match[1] ?? $match[2] ?? 0);
+
+                if ($declared !== $actual) {
+                    $bad[] = sprintf('%s 里写着 %d', $rel, $declared);
+                }
+            }
+        }
+
+        $this->assertSame(
+            [],
+            $bad,
+            sprintf(
+                "文档里的测试用例数和实际（%d）不一致：\n  %s\n"
+                . '加完测试记得同步这些位置——或者干脆不写具体数字。',
+                $actual,
+                implode("\n  ", array_unique($bad))
+            )
+        );
+    }
 }

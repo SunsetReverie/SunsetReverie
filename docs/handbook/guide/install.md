@@ -14,7 +14,7 @@ php -v
 ```
 
 ::: tip 已验证的版本
-8.3.36 / 8.4.27 / 8.5.2 三个版本各跑过完整测试套件（354 用例）。
+8.3.36 / 8.4.27 / 8.5.2 三个版本各跑过完整测试套件。
 
 如果你在 8.3 上遇到问题，很可能是用了 8.4+ 才有的语法——框架本身没有。
 :::
@@ -178,7 +178,7 @@ cp -R "${NEW}core" "${NEW}components" "${NEW}skeleton" sunsetreverie/
 
 # 6. 验证
 php bin/sr about     # 版本号应该变了
-php tests/run.php    # 354 个用例（可选，但建议）
+php tests/run.php    # 398 个用例（可选，但建议）
 ```
 
 ::: warning 不要覆盖 bin/

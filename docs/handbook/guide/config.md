@@ -156,6 +156,7 @@ php bin/sr key:generate
 | `UPLOAD_DISK` | `local` | 存储驱动 |
 | `UPLOAD_MAX_SIZE` | `10485760`（10MB） | 单文件上限 |
 | `UPLOAD_SIGN_SECRET` | 空 | 签名 URL 的密钥。**为空时签名可伪造** |
+| `UPLOAD_CONTENT_ADDRESSED` | `false` | 用内容哈希做文件名（去重 + 秒传）。图床类项目建议开 |
 | `UPLOAD_CHUNK_SIZE` | `5MB` | 分片大小 |
 
 ### 图片

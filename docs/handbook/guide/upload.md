@@ -106,13 +106,130 @@ public function store(Request $request): array
 
 ### 去重
 
+两种方式，取决于规模。
+
+#### 方式一：content-addressed（推荐，无需索引表）
+
+```ini
+# .env
+UPLOAD_CONTENT_ADDRESSED=true
+```
+
+开启后**文件名就是内容哈希**：
+
+```text
+gallery/8d/86/8d86ae4a94101006c2d1f0e4dc722d44fce90da97ef56ac3d9be039f86294298.png
+        └─┬─┘ └─┬─┘ └──────────────────────────┬──────────────────────────┘
+       前2位  次2位                        完整 SHA-256
+```
+
+`store()` 落盘前先判断路径是否存在，**存在就直接返回**：
+
+```php
+$stored = $upload->store($file, 'gallery');   // 同内容第二次 → 不写盘，直接复用
+```
+
+**不需要 `hash → path` 索引表**——路径本身就是索引。
+
+| 好处 | 说明 |
+| --- | --- |
+| 去重 | 同内容只有一个物理文件 |
+| 秒传 | 大文件也适用（分片上传同理） |
+| CDN 友好 | 同内容同 URL，浏览器与回源缓存直接命中 |
+| 换机器不产生孤儿 | 路径由内容决定，不依赖数据库 |
+
+| 代价 | 说明 |
+| --- | --- |
+| 删文件要谨慎 | 一个文件可能被多处引用，删除会影响所有引用方 |
+| 文件名不直观 | 全是哈希，看不到原始文件名（`originalName` 仍在 `StoredFile` 里） |
+
+::: warning 默认关闭
+`content_addressed` 默认 `false`，走原来的随机文件名（`2026/11/05/{32位hex}.png`）。
+
+**图床、素材库这类项目建议开**；头像、附件这类一次性文件保持默认即可。
+:::
+
+#### 方式二：手动查重（不开 content-addressed 时）
+
 ```php
 // 注意：findByHash 在 ChunkedUploadManager 上，不在 UploadManager
 $existing = $this->chunkedUpload->findByHash($hash);
 ```
 
-`hash` 是内容哈希，相同文件重复上传可以复用已有记录（省磁盘）。
-查不到返回 `null`。
+查不到返回 `null`。这条依赖分片会话的索引，适合大文件场景。
+
+## 缩略图
+
+`storeWithThumbnails()` 一次完成「存原图 + 生成多档缩略图」。
+
+```php
+use SunsetReverie\Image\ImageManager;
+use SunsetReverie\Upload\UploadManager;
+
+final class ImageService
+{
+    public function __construct(
+        private readonly UploadManager $upload,
+        private readonly ImageManager $image,
+    ) {
+    }
+
+    public function upload(UploadedFile $file): array
+    {
+        // 缩略图生成器：闭包，Upload 组件不知道 Image 的存在
+        $thumbnailer = fn (string $src, string $dest, int $width): void
+            => $this->image->open($src)
+                ->resize($width, 0, 'width')
+                ->format('jpeg')
+                ->quality(82)
+                ->save($dest);
+
+        return $this->upload->storeWithThumbnails(
+            $file,
+            'gallery',
+            [200, 800, 1600],
+            $thumbnailer,
+        );
+    }
+}
+```
+
+返回：
+
+```php
+[
+    'file' => StoredFile,                              // 原图
+    'thumbs' => [200 => '/uploads/..._200.jpg', ...],  // 宽度 => URL
+    'note' => null,                                    // 跳过原因（见下）
+]
+```
+
+缩略图跟原图同名，后缀加宽度：
+
+```text
+gallery/8d/86/8d86ae4a…4298.png        ← 原图
+gallery/8d/86/8d86ae4a…4298_200.jpg    ← 200 宽
+gallery/8d/86/8d86ae4a…4298_800.jpg    ← 800 宽
+```
+
+::: tip 为什么要传闭包，而不是直接传 ImageManager
+架构约束 `ARCH-3` 规定「组件之间不得互相引用」。传闭包让 Upload 保持零依赖——
+不用图片的项目可以完全不装 Image 组件。
+
+闭包的签名是 `fn (string $sourcePath, string $targetPath, int $width): void`，
+你可以用 ImageManager、也可以用 Imagick 或调外部服务。
+:::
+
+### 三条行为说明
+
+| 情况 | 行为 |
+| --- | --- |
+| 宽度 ≥ 原图宽度 | **跳过**（不放大，避免糊图浪费空间） |
+| 不传闭包 | 只存原图，等价于 `store()` |
+| **云存储** | **跳过**，`note` 返回「当前存储驱动不提供本地路径…」 |
+
+云存储下 `storage->path()` 返回空串，拿不到文件交给处理器。要支持就得
+「下载 → 处理 → 回传」——那是业务决策，框架不替你做。
 
 ## 三种存储
 
@@ -226,6 +343,7 @@ php bin/sr upload:prune
 'disk' => env('UPLOAD_DISK', 'local'),
 'max_size' => (int) env('UPLOAD_MAX_SIZE', 10485760),   // 10MB
 'allowed_mimes' => [...],                                // 真实 MIME 白名单
+'content_addressed' => env('UPLOAD_CONTENT_ADDRESSED', false),  // 用 hash 做文件名（去重）
 'sign_secret' => env('UPLOAD_SIGN_SECRET', ''),          // 签名密钥
 'chunk' => [...],
 ```

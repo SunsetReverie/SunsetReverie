@@ -258,6 +258,32 @@ final class UploadTest extends TestCase
      * @param string $name 客户端文件名
      * @return UploadedFile 上传文件
      */
+    /**
+     * 生成指定尺寸的真实 PNG（缩略图测试要判断「比原图宽则跳过」）。
+     *
+     * @param string $name 客户端文件名
+     * @param int<1, max> $width 宽
+     * @param int<1, max> $height 高
+     * @return UploadedFile 上传文件
+     */
+    private function pngFileOfSize(string $name, int $width, int $height): UploadedFile
+    {
+        $image = imagecreatetruecolor($width, $height);
+        $color = imagecolorallocate($image, 30, 120, 200);
+
+        if ($color === false) {
+            throw new \RuntimeException('无法分配颜色');
+        }
+
+        imagefilledrectangle($image, 0, 0, $width - 1, $height - 1, $color);
+
+        $path = $this->directory . '/' . preg_replace('/[^A-Za-z0-9._-]/', '_', $name) . '.bin';
+        imagepng($image, $path);
+        $this->temporaryFiles[] = $path;
+
+        return UploadedFile::fake($path, $name, 'image/png');
+    }
+
     private function pngFile(string $name): UploadedFile
     {
         $path = $this->write($name . '.bin', base64_decode(
@@ -313,5 +339,142 @@ final class UploadTest extends TestCase
         $stored = $manager->store($this->pngFile('cover.png'), 'avatars');
 
         $this->assertTrue($replacement->exists($stored->path), '文件应落在替换后的驱动里');
+    }
+
+    /**
+     * content_addressed 开启后，同内容落同一路径（去重 + 秒传）。
+     *
+     * 用路径承载哈希而不是额外索引表：`exists()` 就是去重依据，
+     * 不依赖数据库、不依赖缓存，换机器也不会产生孤儿副本。
+     *
+     * @return void
+     */
+    public function testContentAddressedDeduplicates(): void
+    {
+        $storage = new MemoryStorage();
+        $manager = $this->manager($storage, ['content_addressed' => true]);
+
+        $first = $manager->store($this->pngFile('a.png'), 'gallery');
+        $second = $manager->store($this->pngFile('b.png'), 'gallery');
+
+        $this->assertSame($first->path, $second->path, '同内容的路径必须相同');
+        $this->assertSame($first->hash, $second->hash);
+
+        // 路径形如 {dir}/{hash前2}/{hash后2}/{hash}.png
+        $this->assertSame(
+            1,
+            preg_match('#^gallery/[0-9a-f]{2}/[0-9a-f]{2}/[0-9a-f]{64}\.png$#', $first->path),
+            '路径应为 hash 分层：' . $first->path
+        );
+    }
+
+    /**
+     * 默认不开启 content_addressed 时保持旧行为（随机名，不去重）。
+     *
+     * @return void
+     */
+    public function testContentAddressedOffByDefault(): void
+    {
+        $manager = $this->manager(new MemoryStorage());
+
+        $first = $manager->store($this->pngFile('a.png'), 'gallery');
+        $second = $manager->store($this->pngFile('b.png'), 'gallery');
+
+        $this->assertFalse($first->path === $second->path, '默认应产生两个副本（旧行为）');
+        $this->assertSame($first->hash, $second->hash, '内容相同但路径不同');
+    }
+
+    /**
+     * 缩略图生成器是 callable，Upload 组件不依赖 Image。
+     *
+     * 这条守的是架构约束 ARCH-3（组件之间不得互相引用）——
+     * 如果哪天有人为了图省事直接 `use ImageManager`，会在这里之外的地方先炸。
+     *
+     * @return void
+     */
+    public function testStoreWithThumbnailsInvokesCallable(): void
+    {
+        $root = $this->directory . '/store';
+        $manager = $this->manager(new LocalStorage($root, '/uploads'));
+
+        $calls = [];
+
+        $result = $manager->storeWithThumbnails(
+            $this->pngFileOfSize('big.png', 400, 300),
+            'gallery',
+            [50, 5000],
+            static function (string $src, string $dest, int $width) use (&$calls): void {
+                $calls[] = $width;
+
+                // 简化版「生成」：复制一份，测试只关心调用与落盘
+                @mkdir(dirname($dest), 0755, true);
+                copy($src, $dest);
+            }
+        );
+
+        $this->assertSame([50], $calls, '只有比原图小的宽度才应触发（5000 会被跳过）');
+        $this->assertTrue(isset($result['thumbs'][50]), 'thumbs 应包含成功生成的宽度');
+        $this->assertFalse(isset($result['thumbs'][5000]), '超过原图宽度的不应出现');
+        $this->assertNull($result['note'], '正常情况 note 为 null');
+
+        // 缩略图文件真的存在
+        $base = preg_replace('/\.[a-z0-9]+$/i', '', $result['file']->path);
+        $this->assertTrue(is_file($root . '/' . $base . '_50.jpg'), '缩略图应落在原图同目录');
+    }
+
+    /**
+     * 缩略图不能互相覆盖。
+     *
+     * 曾经写成 `{目录}/thumbs/{宽度}.jpg` —— 那个目录是同目录所有图共用的，
+     * 第二张图会直接把第一张的缩略图盖掉。随机名模式下更糟：
+     * 同一天上传的所有图都在同一个日期目录下。
+     *
+     * @return void
+     */
+    public function testThumbnailsDoNotOverwriteEachOther(): void
+    {
+        $root = $this->directory . '/multi';
+        $manager = $this->manager(new LocalStorage($root, '/uploads'), ['content_addressed' => true]);
+
+        $generate = static function (string $src, string $dest, int $width): void {
+            @mkdir(dirname($dest), 0755, true);
+            copy($src, $dest);
+        };
+
+        // 两张内容不同的图
+        $a = $manager->storeWithThumbnails($this->pngFileOfSize('one.png', 400, 300), 'gallery', [50], $generate);
+        $b = $manager->storeWithThumbnails($this->pngFileOfSize('two.png', 500, 400), 'gallery', [50], $generate);
+
+        $this->assertFalse($a['file']->path === $b['file']->path, '两张图路径应不同');
+
+        $baseA = preg_replace('/\.[a-z0-9]+$/i', '', $a['file']->path);
+        $baseB = preg_replace('/\.[a-z0-9]+$/i', '', $b['file']->path);
+
+        $this->assertTrue(is_file($root . '/' . $baseA . '_50.jpg'), '第一张的缩略图应在');
+        $this->assertTrue(is_file($root . '/' . $baseB . '_50.jpg'), '第二张的缩略图也应在（没被覆盖）');
+    }
+
+    /**
+     * 存储不提供本地路径时（云存储），跳过缩略图并给出原因。
+     *
+     * @return void
+     */
+    public function testThumbnailsSkippedWhenNoLocalPath(): void
+    {
+        $manager = $this->manager(new MemoryStorage());
+
+        $result = $manager->storeWithThumbnails(
+            $this->pngFile('cloud.png'),
+            'gallery',
+            [50],
+            static function (string $src, string $dest, int $width): void {
+                // 不该被调用
+                throw new \RuntimeException('云存储下不应尝试生成缩略图');
+            }
+        );
+
+        $this->assertSame([], $result['thumbs'], 'thumbs 应为空');
+        $this->assertTrue(is_string($result['note']), '应说明跳过原因');
+        $this->assertStringContains('不提供本地路径', (string) $result['note']);
     }
 }

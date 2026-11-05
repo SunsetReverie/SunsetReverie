@@ -47,6 +47,16 @@ final class UploadManager
 
     /**
      * @param array<string, mixed> $config 上传配置
+    /**
+     * 是否用内容哈希做文件名。
+     *
+     * 开启后：同一内容永远落在同一路径 —— 存在性检查即去重，
+     * 不需要额外的 hash → path 索引表。
+     */
+    private readonly bool $contentAddressed;
+
+    /**
+     * @param array<string, mixed> $config 上传配置
      * @param StorageInterface $storage 存储驱动
      * @param DomainContext|null $domainContext 域上下文（配置了域时自动按域分目录）
      */
@@ -55,6 +65,7 @@ final class UploadManager
         private StorageInterface $storage,
         private readonly ?DomainContext $domainContext = null,
     ) {
+        $this->contentAddressed = (bool) ($config['content_addressed'] ?? false);
     }
 
     /**
@@ -74,7 +85,24 @@ final class UploadManager
         $size = $file->size();
         $originalName = $file->originalName();
 
-        $relative = $this->buildPath($directory, $mime);
+        $relative = $this->buildPath($directory, $mime, $hash);
+
+        /*
+         * content-addressed 模式下，路径由内容哈希决定，所以「同一内容 =
+         * 同一路径」——存在性检查就是去重，不需要额外的 hash → path 索引表。
+         *
+         * 关掉时（默认）走随机文件名，与旧行为一致。
+         */
+        if ($this->contentAddressed && $this->storage->exists($relative)) {
+            return new StoredFile(
+                path: $relative,
+                url: $this->storage->url($relative),
+                size: $size,
+                mime: $mime,
+                hash: $hash,
+                originalName: $originalName,
+            );
+        }
 
         $this->storage->put($relative, $file->tmpPath());
 
@@ -100,6 +128,97 @@ final class UploadManager
      * @return string 签名 URL
      * @throws UploadException 未配置签名密钥时抛出
      */
+    /**
+     * 保存文件并按需生成多档缩略图。
+     *
+     * 缩略图与原图同名，后缀加宽度：`{原名去尾}_{宽度}.jpg`。
+     *
+     * 三处刻意的设计：
+     *
+     * 1. **`$thumbnailer` 是 callable，不是 ImageManager**。
+     *    架构约束 ARCH-3 规定「组件之间不得互相引用」，所以这里不能直接
+     *    依赖 Image 组件。传闭包把处理逻辑交给调用方，Upload 保持零依赖。
+     *
+     * 2. **`$thumbnailer` 可选**。不传就只存原图，等价于 `store()`。
+     *
+     * 3. **云存储下静默跳过缩略图**，在返回值里给出原因。
+     *    云存储的 `storage->path()` 返回空串，拿不到文件；强行支持要
+     *    「下载 → 处理 → 回传」，那是调用方的决策，不该藏在框架里。
+     *
+     * @param UploadedFile $file 上传文件
+     * @param string $directory 子目录（如 gallery）
+     * @param list<int> $widths 缩略图宽度（等比缩放，比原图宽的自动跳过）
+     * @param callable(string, string, int): void|null $thumbnailer
+     *        缩略图生成器，签名 `fn (string $sourcePath, string $targetPath, int $width): void`
+     * @return array{file: StoredFile, thumbs: array<int, string>, note: string|null}
+     *         thumbs 是「宽度 => URL」；note 非空表示缩略图被跳过及原因
+     * @throws UploadException 校验不通过或写入失败时抛出
+     */
+    public function storeWithThumbnails(
+        UploadedFile $file,
+        string $directory = '',
+        array $widths = [200, 800, 1600],
+        ?callable $thumbnailer = null,
+    ): array {
+        $stored = $this->store($file, $directory);
+
+        if ($thumbnailer === null || !str_starts_with($stored->mime, 'image/')) {
+            return ['file' => $stored, 'thumbs' => [], 'note' => null];
+        }
+
+        $absolute = $this->storage->path($stored->path);
+
+        if ($absolute === '') {
+            return [
+                'file' => $stored,
+                'thumbs' => [],
+                'note' => '当前存储驱动不提供本地路径，缩略图需自行下载处理后回传',
+            ];
+        }
+
+        // 用 PHP 内置的 getimagesize 读宽度——不引入 Image 组件也能判断「该不该缩放」
+        $size = @getimagesize($absolute);
+
+        if ($size === false) {
+            return [
+                'file' => $stored,
+                'thumbs' => [],
+                'note' => '无法读取图片尺寸，已跳过缩略图',
+            ];
+        }
+
+        $sourceWidth = $size[0];
+        $thumbs = [];
+
+        foreach ($widths as $width) {
+            // 比原图还宽就跳过：放大没有意义，只会浪费空间
+            if ($width <= 0 || $sourceWidth <= $width) {
+                continue;
+            }
+
+            /*
+             * 缩略图跟原图同名，后缀加宽度。
+             *
+             * 不能放 `dirname/thumbs/{width}.jpg`：那个目录是**同目录所有图共用**的，
+             * 第二张图会直接覆盖第一张的缩略图。content-addressed 模式下
+             * 前 4 位 hash 相同的图会撞进同一个目录；随机名模式下更糟——
+             * 同一天上传的所有图都在 `2026/11/05/` 下。
+             */
+            $thumbRelative = preg_replace('/\.[a-z0-9]+$/i', '', $stored->path) . '_' . $width . '.jpg';
+            $thumbAbsolute = $this->storage->path($thumbRelative);
+
+            $thumbnailer($absolute, $thumbAbsolute, $width);
+
+            if (!is_file($thumbAbsolute)) {
+                continue;
+            }
+
+            $thumbs[$width] = $this->storage->url($thumbRelative);
+        }
+
+        return ['file' => $stored, 'thumbs' => $thumbs, 'note' => null];
+    }
+
     public function signedUrl(string $path, int $ttl = 900, string $route = '/files'): string
     {
         $expires = time() + max(1, $ttl);
@@ -225,11 +344,9 @@ final class UploadManager
      * @param string $mime 真实 MIME
      * @return string 相对路径
      */
-    private function buildPath(string $directory, string $mime): string
+    private function buildPath(string $directory, string $mime, string $hash = ''): string
     {
         $extension = self::MIME_EXTENSIONS[$mime] ?? 'bin';
-        $date = date('Y/m/d');
-        $name = bin2hex(random_bytes(16)) . '.' . $extension;
 
         $directory = trim($directory, '/');
 
@@ -244,7 +361,29 @@ final class UploadManager
             $directory = $domain . ($directory === '' ? '' : '/' . $directory);
         }
 
-        return ($directory === '' ? '' : $directory . '/') . $date . '/' . $name;
+        $prefix = $directory === '' ? '' : $directory . '/';
+
+        /*
+         * content-addressed：文件名就是内容哈希。
+         *
+         * 好处不只是去重——同一内容的 URL 永远相同，CDN 回源和浏览器缓存
+         * 都能直接命中；换机器、换存储也不会产生孤儿副本。
+         *
+         * 代价：删一个文件可能影响多个引用方（图床场景通常由业务层做引用计数，
+         * 或者干脆不删）。
+         */
+        if ($this->contentAddressed && $hash !== '') {
+            // 两层分桶，避免单目录文件过多（单目录超万个后 inode 查找会明显变慢）
+            return $prefix
+                . substr($hash, 0, 2) . '/'
+                . substr($hash, 2, 2) . '/'
+                . $hash . '.' . $extension;
+        }
+
+        $date = date('Y/m/d');
+        $name = bin2hex(random_bytes(16)) . '.' . $extension;
+
+        return $prefix . $date . '/' . $name;
     }
 
     /**
